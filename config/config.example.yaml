@@ -1,0 +1,87 @@
+# GARP Shipping Connector — Konfiguration
+# Kopiera till config.yaml och fyll i era uppgifter.
+
+# Mappar
+paths:
+  watch_dir: "C:\\GARP\\Unifaun\\Outgoing"    # GARP droppar XML här
+  done_dir: "C:\\GARP\\Unifaun\\Done"          # Klara filer flyttas hit
+  error_dir: "C:\\GARP\\Unifaun\\Error"        # Felfiler hamnar här
+  log_dir: "C:\\GARP\\Logs"                    # Loggfiler
+  label_cache_dir: "C:\\GARP\\Labels"          # Backup av etiketter (PDF)
+
+# Avsändarinformation (Ernst P AB)
+sender:
+  name: "Ernst P AB"
+  address1: "Möbelgatan 5"
+  zipcode: "43133"
+  city: "Mölndal"
+  country: "SE"
+  phone: "+46317030770"
+  email: "${SENDER_EMAIL}"              # Er avsändar-e-post
+  customer_number_dhl: "101733"         # Ert DHL-kundnummer
+
+# DHL Paket Sverige API
+# Alla API:er (TransportInstruction, Print, ServicePoint, etc.) nås via samma bas-URL.
+# Varje API har sin egen sökväg, t.ex. /transportinstructionapi/v1/...
+dhl:
+  # Sandbox: https://test-api.freight-logistics.dhl.com
+  # Produktion: https://api.freight-logistics.dhl.com
+  base_url: "https://test-api.freight-logistics.dhl.com"
+  api_key: "${DHL_API_KEY}"            # Sätt som miljövariabel (client-key GUID)
+  timeout_seconds: 30
+  retry_attempts: 3
+  retry_delay_seconds: 5
+
+# Bring (Norge) — planerat
+# bring:
+#   base_url: "https://api.bring.com"
+#   api_key: "${BRING_API_KEY}"
+#   customer_number: "XXXXXX"
+
+# Skrivare
+# Etikettskrivare = Zebra (fraktetiketter)
+# Dokumentskrivare = A4/laser (fraktlistor, följesedlar)
+# DHL returnerar alltid PDF-etiketter.
+# Välj skrivare via Inställningar i tray-appen, eller ange här.
+printers:
+  label_printer_name: "ZDesigner ZD420-203dpi ZPL"  # Ert Zebra-skrivarnamn
+  label_format: "pdf"                                # pdf eller zpl
+  document_printer_name: ""                          # A4-skrivare (lämna tomt = ej utskrift)
+  document_format: "pdf"
+
+# SMTP (Loopia) — för kundmail med spårningslänk
+smtp:
+  host: "mailcluster.loopia.se"
+  port: 587
+  username: "${SMTP_USERNAME}"         # Sätt som miljövariabel
+  password: "${SMTP_PASSWORD}"         # Sätt som miljövariabel
+  use_tls: true
+  from_address: "${SMTP_FROM_ADDRESS}"  # t.ex. order@ernstp.se
+  from_name: "Ernst P AB"
+
+# Mappbevakning
+watcher:
+  poll_interval_seconds: 5
+  file_stability_seconds: 2   # Vänta tills filen slutat växa
+
+# Loggning
+logging:
+  level: "INFO"
+  max_file_size_mb: 10
+  backup_count: 30
+  console_output: true
+
+# =============================================================
+# DHL produktkoder (srvid-format i GARP: DHL:PRODUKTKOD[:TILLÄGG])
+#
+# Produkt  | Namn                    | Notering
+# ---------|-------------------------|----------------------------------
+# 102      | DHL Paket (B2B)         | Företagspaket
+# 103      | DHL ServicePoint (B2C)  | Ombudspaket (kräver ombud-ID)
+# 104      | DHL ServicePoint (C2B)  | Returpaket
+# 109      | DHL Parcel Connect      | Utrikespaket
+# 210      | DHL Pall                | Pallfrakt (packageType: 701/702)
+# 211      | DHL Stycke              | Styckegods
+#
+# Tillägg:  DHL:102:AVIS = DHL Paket med avisering (notification)
+# =============================================================

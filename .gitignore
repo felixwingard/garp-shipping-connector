@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/output/
+*.spec.bak
+
+# Config med riktiga nycklar
+config/config.yaml
+
+# Loggfiler
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Pytest
+.pytest_cache/
+
+# Etiketter (lokala testfiler)
+*.pdf
+*.zpl
+
+# Virtualenv
+venv/
+.venv/

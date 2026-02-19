@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+ <receiver rcvid="7631      ">
+  <val n="name">Testbutiken AB                 </val>
+  <val n="address1">Storgatan 10                                                 </val>
+  <val n="address2">                              </val>
+  <val n="zipcode">11122</val>
+  <val n="city">STOCKHOLM            </val>
+  <val n="country">SE</val>
+  <val n="phone">+46701234567        </val>
+  <val n="fax"></val>
+  <val n="sms">                    </val>
+  <val n="contact">Anna Andersson       </val>
+  <val n="email">anna@testbutiken.se                                   </val>
+ </receiver>
+ <shipment orderno="107739-132888">
+  <val n="from">Ernst P AB</val>
+  <val n="termcode">S</val>
+  <val n="to">7631      </val>
+  <val n="deliveryinstruction">Lämna vid dörren                               </val>
+  <val n="reference">107739-132888</val>
+  <service srvid="DHL:102                          ">
+   <addon adnid="     ">
+   </addon>
+   <booking>
+    <val n="pickupbooking">YES</val>
+    <val n="pickupdate">2026-02-19</val>
+   </booking>
+  </service>
+  <ufonline>
+   <option optid="enot">
+    <val n="message">           Your order 107739 is delivered, if you have questions contact us +46701234567</val>
+   </option>
+  </ufonline>
+  <container type="parcel" measure="total">
+   <val n="copies">      1</val>
+   <val n="packagecode">PKT     </val>
+   <val n="contents">material       </val>
+   <val n="weight">       5.50</val>
+   <val n="volume">       0.004</val>
+  </container>
+ </shipment>
+</data>
