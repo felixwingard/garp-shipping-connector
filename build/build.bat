@@ -10,20 +10,26 @@ echo.
 REM Körandes från build/ — gå till projektrot
 cd /d "%~dp0.."
 
-REM Kontrollera Python
+REM Kontrollera Python (prova python eller py-launcher)
+set PYTHON=python
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo  FEL: Python hittades inte!
-    pause
-    exit /b 1
+    py --version >nul 2>&1
+    if errorlevel 1 (
+        echo  FEL: Python hittades inte!
+        echo  Installera fran python.org — kryssa i "Add Python to PATH"
+        pause
+        exit /b 1
+    )
+    set PYTHON=py
 )
 
 echo  [1/3] Installerar PyInstaller...
-pip install pyinstaller pywin32 --quiet
+%PYTHON% -m pip install pyinstaller pywin32 --quiet
 echo.
 
 echo  [2/3] Bygger .exe (kan ta 1-2 minuter)...
-pyinstaller build/build.spec --noconfirm --clean
+%PYTHON% -m PyInstaller build/build.spec --noconfirm --clean
 if errorlevel 1 (
     echo  FEL: Bygget misslyckades
     pause

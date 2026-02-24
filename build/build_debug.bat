@@ -6,7 +6,7 @@ echo  Bygger DEBUG-version (med konsolfönster för felsökning)
 echo.
 
 cd /d "%~dp0.."
-pip install pyinstaller pywin32 --quiet 2>nul
+python -m pip install pyinstaller pywin32 --quiet 2>nul
 
 REM Temporär spec med console=True (visar logg i fönster)
 copy build\build.spec build\build_debug.spec >nul
