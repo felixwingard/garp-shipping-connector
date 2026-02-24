@@ -63,6 +63,19 @@ class TestParseFile:
         assert s.notifications[0].opt_id == "enot"
         assert "107739" in s.notifications[0].message
 
+    def test_parse_bring_norge(self, parser):
+        filepath = FIXTURES_DIR / "sample_bring_norge.xml"
+        shipments = parser.parse_file(filepath)
+
+        assert len(shipments) == 1
+        s = shipments[0]
+        assert s.order_no == "107740-132889"
+        assert s.service.carrier == CarrierType.BRING
+        assert s.service.product_code == "0340"
+        assert s.receiver.country == "NO"
+        assert s.receiver.city == "OSLO"
+        assert s.containers[0].weight == 8.2
+
 
 class TestParseSrvid:
     """Tester för srvid-parsning."""
@@ -83,6 +96,18 @@ class TestParseSrvid:
         carrier, code, addon = parser._parse_srvid("PN:19")
         assert carrier == CarrierType.POSTNORD
         assert code == "19"
+        assert addon == ""
+
+    def test_bring(self, parser):
+        carrier, code, addon = parser._parse_srvid("BRING:0342")
+        assert carrier == CarrierType.BRING
+        assert code == "0342"
+        assert addon == ""
+
+    def test_bring_business_parcel(self, parser):
+        carrier, code, addon = parser._parse_srvid("BRING:BUSINESS_PARCEL_BULK")
+        assert carrier == CarrierType.BRING
+        assert code == "BUSINESS_PARCEL_BULK"
         assert addon == ""
 
     def test_invalid_format(self, parser):

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+ <receiver rcvid="7640      ">
+  <val n="name">Norsk Kund AS                 </val>
+  <val n="address1">Karl Johans gate 15                                      </val>
+  <val n="address2">                              </val>
+  <val n="zipcode">0154</val>
+  <val n="city">OSLO                 </val>
+  <val n="country">NO</val>
+  <val n="phone">+4722123456         </val>
+  <val n="fax"></val>
+  <val n="sms">                    </val>
+  <val n="contact">Ola Nordmann       </val>
+  <val n="email">ola@norsk-kund.no                                   </val>
+ </receiver>
+ <shipment orderno="107740-132889">
+  <val n="from">Ernst P AB</val>
+  <val n="termcode">S</val>
+  <val n="to">7640      </val>
+  <val n="deliveryinstruction">                                </val>
+  <val n="reference">107740-132889</val>
+  <service srvid="BRING:0340                         ">
+   <addon adnid="     ">
+   </addon>
+  </service>
+  <ufonline>
+   <option optid="enot">
+    <val n="message">Takk for din bestilling. Spor pakken her.</val>
+   </option>
+  </ufonline>
+  <container type="parcel" measure="total">
+   <val n="copies">      1</val>
+   <val n="packagecode">PKT     </val>
+   <val n="contents">møbler           </val>
+   <val n="weight">       8.20</val>
+   <val n="volume">       0.012</val>
+  </container>
+ </shipment>
+</data>

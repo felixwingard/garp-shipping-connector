@@ -18,7 +18,8 @@ sender:
   country: "SE"
   phone: "+46317030770"
   email: "${SENDER_EMAIL}"              # Er avsändar-e-post
-  customer_number_dhl: "101733"         # Ert DHL-kundnummer
+  customer_number_dhl: "XXXXXX"         # Ert DHL-kundnummer
+  customer_number_bring: ""             # Bring-kundnummer (alternativ till bring.customer_number)
 
 # DHL Paket Sverige API
 # Alla API:er (TransportInstruction, Print, ServicePoint, etc.) nås via samma bas-URL.
@@ -32,11 +33,15 @@ dhl:
   retry_attempts: 3
   retry_delay_seconds: 5
 
-# Bring (Norge) — planerat
+# Bring (Norge) — Pickup Parcel Bulk + Business Parcel Bulk
+# srvid i GARP: BRING:0342, BRING:0332 eller BRING:PICKUP_PARCEL_BULK, BRING:BUSINESS_PARCEL_BULK
 # bring:
-#   base_url: "https://api.bring.com"
+#   api_uid: "${BRING_API_UID}"
 #   api_key: "${BRING_API_KEY}"
 #   customer_number: "XXXXXX"
+#   consolidated_shipment_id: ""         # Bulk-ID från Mybring (när pall skapats). Uppdatera per batch.
+#   test_mode: true
+#   timeout_seconds: 30
 
 # Skrivare
 # Etikettskrivare = Zebra (fraktetiketter)
@@ -56,7 +61,7 @@ smtp:
   username: "${SMTP_USERNAME}"         # Sätt som miljövariabel
   password: "${SMTP_PASSWORD}"         # Sätt som miljövariabel
   use_tls: true
-  from_address: "${SMTP_FROM_ADDRESS}"  # t.ex. order@ernstp.se
+  from_address: "${SMTP_FROM_ADDRESS}"  # t.ex. order@example.com
   from_name: "Ernst P AB"
 
 # Mappbevakning
@@ -78,10 +83,25 @@ logging:
 # ---------|-------------------------|----------------------------------
 # 102      | DHL Paket (B2B)         | Företagspaket
 # 103      | DHL ServicePoint (B2C)  | Ombudspaket (kräver ombud-ID)
-# 104      | DHL ServicePoint (C2B)  | Returpaket
+# 104      | DHL ServicePoint (C2B)  | Returpaket — stöds ej
 # 109      | DHL Parcel Connect      | Utrikespaket
 # 210      | DHL Pall                | Pallfrakt (packageType: 701/702)
 # 211      | DHL Stycke              | Styckegods
 #
 # Tillägg:  DHL:102:AVIS = DHL Paket med avisering (notification)
+# =============================================================
+#
+# =============================================================
+# Bring produktkoder (Norge) — srvid: BRING:PRODUKTKOD
+#
+# Produkt  | Namn                 | Notering
+# ---------|----------------------|-----------------------------
+# 0340     | Pickup Parcel        | Ombudspaket (B2C), enskilda paket
+# 0342     | Pickup Parcel Bulk   | Pall till Oslo — kräver bulk-ID från Mybring
+# 0330     | Business Parcel      | Företagspaket, enskilda paket
+# 0332     | Business Parcel Bulk | Pall till Oslo — kräver bulk-ID från Mybring
+#
+# För 0342/0332: Skapa pall i Mybring, kopiera bulk-ID, sätt i config
+# eller i srvid: BRING:0342:CS059102945NO (addon = bulk-ID)
+# API: https://developer.bring.com/api/booking/
 # =============================================================

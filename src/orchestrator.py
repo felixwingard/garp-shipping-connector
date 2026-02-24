@@ -2,7 +2,7 @@
 
 XML → Parsa → API-anrop → Utskrift → Mail → Flytta fil
 
-Stöder: DHL (alla produkter), Bring (Norge — planerat)
+Stöder: DHL (Sverige), Bring (Norge)
 
 Event-callbacks:
     on_event(event_type, data) anropas vid:
@@ -21,6 +21,7 @@ from typing import Optional, Callable
 from .parsers.xml_parser import GarpXMLParser
 from .parsers.models import Shipment, CarrierType
 from .carriers.dhl import DHLClient
+from .carriers.bring import BringClient
 from .printing.printer import LabelPrinter
 from .notifications.email_sender import EmailSender
 
@@ -44,6 +45,8 @@ class ShipmentOrchestrator:
 
         sender = config["sender"]
         self.dhl = DHLClient(config["dhl"], sender)
+        bring_cfg = config.get("bring")
+        self.bring = BringClient(bring_cfg, sender) if bring_cfg else None
 
         # Printer-config: stöd för nytt format (printers) och gammalt (printer)
         printer_config = config.get("printers", config.get("printer", {}))
@@ -126,6 +129,16 @@ class ShipmentOrchestrator:
 
     def _process_single(self, shipment: Shipment):
         """Bearbetar en enskild sändning genom hela kedjan."""
+        if not shipment.receiver:
+            raise ValueError(
+                f"Order {shipment.order_no} saknar mottagarinfo. "
+                "Lägg till receiver i XML."
+            )
+        if not shipment.service:
+            raise ValueError(
+                f"Order {shipment.order_no} saknar service/srvid. "
+                "Ange t.ex. DHL:102 i XML."
+            )
         carrier = shipment.service.carrier
         logger.info(
             f"Order {shipment.order_no}: "
@@ -134,6 +147,11 @@ class ShipmentOrchestrator:
 
         # 1. Skapa sändning hos transportör
         if carrier == CarrierType.DHL:
+            if shipment.service.product_code == "104":
+                raise ValueError(
+                    "DHL:104 (ServicePoint C2B retur) stöds inte. "
+                    "Använd DHL:102 eller DHL:103."
+                )
             result = self.dhl.create_shipment(shipment)
             tracking = result["tracking_number"]
             shipment_id = result["shipment_id"]
@@ -148,13 +166,28 @@ class ShipmentOrchestrator:
             if booking and booking.pickup_booking:
                 pickup_date = booking.pickup_date
                 if pickup_date:
-                    self.dhl.request_pickup(shipment_id, pickup_date)
+                    pickup_instruction = shipment.delivery_instruction or ""
+                    self.dhl.request_pickup(
+                        shipment_id,
+                        pickup_date,
+                        pickup_instruction=pickup_instruction,
+                    )
                     logger.info(f"  Upphämtning bokad: {pickup_date}")
+
+        elif carrier == CarrierType.BRING:
+            if not self.bring:
+                raise ValueError(
+                    "Bring är vald men ingen bring-konfiguration finns i config.yaml"
+                )
+            result = self.bring.create_shipment(shipment)
+            tracking = result["tracking_number"]
+            label_data = result["label_data"]
+            shipment_list = None
 
         else:
             raise ValueError(
                 f"Transportör '{carrier.value}' stöds inte ännu. "
-                f"Stödda: DHL"
+                f"Stödda: DHL, Bring"
             )
 
         # 3. Spara etikett på disk (backup)
@@ -213,9 +246,13 @@ class ShipmentOrchestrator:
                 age = datetime.now().timestamp() - lock_path.stat().st_mtime
                 if age > 300:
                     lock_path.unlink()
-                    lock_path.open("x").close()
-                    logger.warning(f"Tog bort gammal lockfil för {filepath.name}")
-                    return True
+                    try:
+                        lock_path.open("x").close()
+                        logger.warning(f"Tog bort gammal lockfil för {filepath.name}")
+                        return True
+                    except FileExistsError:
+                        # Annan process tog locken — ge upp
+                        return False
             return False
 
     def _release_lock(self, filepath: Path):

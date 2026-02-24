@@ -1,0 +1,278 @@
+"""Bring Booking API-klient.
+
+Använder Bring Booking API för Norge:
+- Pickup Parcel Bulk (0342 / PICKUP_PARCEL_BULK)
+- Business Parcel Bulk (0332 / BUSINESS_PARCEL_BULK)
+
+Ref: https://developer.bring.com/api/booking/
+Auth: X-Mybring-API-Uid + X-Mybring-API-Key
+"""
+
+from __future__ import annotations
+
+import base64
+import logging
+from typing import Optional
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+from .base import CarrierClient
+from ..parsers.models import Shipment
+
+logger = logging.getLogger(__name__)
+
+# Bring service code -> API product id
+# Ref: https://developer.bring.com/api/services/
+BRING_SERVICES = {
+    # Bulk (kräver bulk-avtal)
+    "0342": "PICKUP_PARCEL_BULK",
+    "0332": "BUSINESS_PARCEL_BULK",
+    "PICKUP_PARCEL_BULK": "PICKUP_PARCEL_BULK",
+    "BUSINESS_PARCEL_BULK": "BUSINESS_PARCEL_BULK",
+    # Icke-bulk (list agreement)
+    "0340": "PICKUP_PARCEL",
+    "0330": "BUSINESS_PARCEL",
+    "PICKUP_PARCEL": "PICKUP_PARCEL",
+    "BUSINESS_PARCEL": "BUSINESS_PARCEL",
+}
+
+BOOKING_URL = "https://api.bring.com/booking/api/create"
+
+
+class BringClient(CarrierClient):
+    """Klient för Bring Booking API."""
+
+    def __init__(self, config: dict, sender_config: dict):
+        self.api_uid = config["api_uid"]
+        self.api_key = config["api_key"]
+        self.customer_number = config.get("customer_number") or sender_config.get(
+            "customer_number_bring", ""
+        )
+        self._consolidated_shipment_id = config.get("consolidated_shipment_id", "")
+        self.sender = sender_config
+        self.test_mode = config.get("test_mode", True)
+        self.timeout = config.get("timeout_seconds", 30)
+        self.session = self._create_session(config)
+
+    def _create_session(self, config: dict) -> requests.Session:
+        session = requests.Session()
+        session.headers.update(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Mybring-API-Uid": self.api_uid,
+                "X-Mybring-API-Key": self.api_key,
+                "X-Bring-Test-Indicator": str(self.test_mode).lower(),
+                "X-Bring-Client-URL": config.get(
+                    "client_url", "https://ernstp.se"
+                ),
+            }
+        )
+        retries = Retry(
+            total=config.get("retry_attempts", 3),
+            backoff_factor=config.get("retry_delay_seconds", 5),
+            status_forcelist=[429, 502, 503, 504],
+            allowed_methods=["POST", "GET"],
+        )
+        session.mount("https://", HTTPAdapter(max_retries=retries))
+        return session
+
+    def create_shipment(self, shipment: Shipment) -> dict:
+        """Skapar sändning via Bring Booking API.
+
+        Returnerar label direkt i samma anrop.
+        """
+        product_id = BRING_SERVICES.get(
+            shipment.service.product_code.upper(),
+            shipment.service.product_code,
+        )
+        payload = self._build_booking_payload(shipment, product_id)
+
+        logger.info(
+            f"Bring: Skapar sändning för order {shipment.order_no}, "
+            f"produkt {product_id}"
+        )
+
+        response = self.session.post(
+            BOOKING_URL,
+            json=payload,
+            timeout=self.timeout,
+        )
+        if response.status_code >= 400:
+            try:
+                err_body = response.json()
+                logger.error(f"Bring API fel {response.status_code}: {err_body}")
+                raise RuntimeError(
+                    f"Bring API {response.status_code}: {err_body}"
+                )
+            except (ValueError, TypeError):
+                pass
+            response.raise_for_status()
+        data = response.json()
+
+        # Extrahera tracking och etikett från första consignment
+        consignments = data.get("consignments", [])
+        if not consignments:
+            raise RuntimeError("Bring: Inga consignments i svar")
+
+        cons = consignments[0]
+        confirmation = cons.get("confirmation") or {}
+        consignment_number = confirmation.get("consignmentNumber", "")
+        # packages kan vara i confirmation eller på cons-nivå
+        packages = confirmation.get("packages") or cons.get("packages", [])
+        tracking = packages[0].get("packageNumber", "") if packages else consignment_number
+
+        # Etikett: cons.labels.*, cons.links.*, eller confirmation.links.labels
+        label_data = self._fetch_label(cons, confirmation)
+
+        logger.info(
+            f"Bring: Sändning skapad — consignment={consignment_number}, "
+            f"tracking={tracking}"
+        )
+
+        return {
+            "shipment_id": consignment_number,
+            "tracking_number": tracking,
+            "label_data": label_data,
+            "label_format": "pdf",
+        }
+
+    def get_label(self, shipment_id: str, label_format: str = "pdf") -> bytes:
+        """Bring returnerar etikett i create_shipment — denna för fallback."""
+        raise NotImplementedError(
+            "Bring: Etikett hämtas i create_shipment. "
+            "Använd get_all_documents via create_shipment."
+        )
+
+    def get_all_documents(self, shipment_id: str) -> dict:
+        """Bring har ett anrop — label finns redan från create_shipment."""
+        raise NotImplementedError(
+            "Bring: Anropa create_shipment först — den returnerar label."
+        )
+
+    def _fetch_label(self, cons: dict, confirmation: dict = None) -> bytes:
+        """Hämtar etikett från consignment-svar (base64 eller URL)."""
+        conf = confirmation or {}
+        labels = cons.get("labels") or {}
+        if isinstance(labels, str):
+            return base64.b64decode(labels)
+        label_b64 = labels.get("base64") or labels.get("labels", "")
+        if label_b64:
+            return base64.b64decode(label_b64)
+        # URL: cons.labels.link, cons.links.labels, eller confirmation.links.labels
+        url = (
+            labels.get("link")
+            or (cons.get("links") or {}).get("labels")
+            or (conf.get("links") or {}).get("labels")
+        )
+        if url:
+            resp = self.session.get(url, timeout=self.timeout)
+            resp.raise_for_status()
+            return resp.content
+        raise ValueError("Bring: Inga etiketter i API-svar (labels/link saknas)")
+
+    def _build_booking_payload(self, shipment: Shipment, product_id: str) -> dict:
+        """Bygger Booking API payload."""
+        recv = shipment.receiver
+        if not recv:
+            raise ValueError(
+                f"Order {shipment.order_no} saknar mottagarinfo. "
+                "Bring kräver recipient."
+            )
+        container = shipment.containers[0] if shipment.containers else None
+        weight = container.weight if container else 1.0
+        if weight <= 0:
+            weight = 1.0
+
+        # Dimensioner i cm — min 1 för Bring
+        length = int(container.length) if container and container.length > 0 else 20
+        width = int(container.width) if container and container.width > 0 else 15
+        height = int(container.height) if container and container.height > 0 else 5
+        length = max(1, length)
+        width = max(1, width)
+        height = max(1, height)
+
+        consignment: dict = {
+            "shippingDateTime": _bring_datetime_now(),
+            "product": {
+                        "id": product_id,
+                        "customerNumber": self.customer_number,
+                        "additionalServices": [],
+                    },
+                    "parties": {
+                        "sender": {
+                            "name": self.sender.get("name", ""),
+                            "addressLine": self.sender.get("address1", ""),
+                            "addressLine2": self.sender.get("address2", ""),
+                            "postalCode": self.sender.get("zipcode", ""),
+                            "city": self.sender.get("city", ""),
+                            "countryCode": self.sender.get("country", "SE"),
+                            "contact": {
+                                "name": self.sender.get("name", ""),
+                                "email": self.sender.get("email", ""),
+                                "phoneNumber": self.sender.get("phone", ""),
+                            },
+                            "reference": shipment.reference or shipment.order_no,
+                        },
+                        "recipient": {
+                            "name": recv.name,
+                            "addressLine": recv.address1,
+                            "addressLine2": recv.address2 or "",
+                            "postalCode": _clean_postal(recv.zipcode),
+                            "city": recv.city,
+                            "countryCode": recv.country or "NO",
+                            "contact": {
+                                "name": recv.contact or recv.name,
+                                "email": recv.email or "",
+                                "phoneNumber": recv.phone or "",
+                            },
+                            "reference": shipment.reference or "",
+                        },
+                    },
+                    "packages": [
+                        {
+                            "weightInKg": weight,
+                            "dimensions": {
+                                "lengthInCm": length,
+                                "widthInCm": width,
+                                "heightInCm": height,
+                            },
+                            "goodsDescription": (
+                                container.contents[:35] if container and container.contents else ""
+                            ),
+                        }
+                    ],
+        }
+        # Bulk-produkter (0342/0332) kräver consolidatedShipmentId från Mybring.
+        # Skapa pall i Mybring → kopiera bulk-ID → sätt i config eller srvid: BRING:0342:CS059102945NO
+        consolidated_id = (
+            (shipment.service.addon or "").strip()
+            or (self._consolidated_shipment_id or "").strip()
+            or ""
+        )
+        if product_id in ("PICKUP_PARCEL_BULK", "BUSINESS_PARCEL_BULK"):
+            if not consolidated_id:
+                raise ValueError(
+                    f"BRING:{product_id} kräver bulk-ID (consolidatedShipmentId). "
+                    "Skapa pall i Mybring, kopiera ID och ange i config "
+                    "(bring.consolidated_shipment_id) eller i srvid: BRING:0342:CS059102945NO"
+                )
+            consignment["references"] = {"consolidatedShipmentId": str(consolidated_id)[:20]}
+
+        return {"schemaVersion": 1, "consignments": [consignment]}
+
+
+def _clean_postal(zipcode: str) -> str:
+    """Rensar postnummer (ta bort landskod-prefix)."""
+    cleaned = zipcode.strip()
+    if len(cleaned) > 3 and cleaned[2] == "-" and cleaned[:2].isalpha():
+        cleaned = cleaned[3:]
+    return cleaned
+
+
+def _bring_datetime_now() -> str:
+    """ISO 8601 datetime för Bring."""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

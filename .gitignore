@@ -9,6 +9,11 @@ build/output/
 # Config med riktiga nycklar
 config/config.yaml
 
+# Miljövariabler
+.env
+.env.*
+.env.local
+
 # Loggfiler
 *.log
 

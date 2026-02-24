@@ -70,8 +70,8 @@ PACKAGE_TYPE_DEFAULTS = {
     "210": "701",  # EUR-pall
 }
 
-# Produkter som kräver AccessPoint i parties
-PRODUCTS_REQUIRING_ACCESSPOINT = {"103", "104"}
+# Produkter som kräver AccessPoint i parties (104 C2B retur stöds ej)
+PRODUCTS_REQUIRING_ACCESSPOINT = {"103"}
 
 
 def clean_postal_code(zipcode: str, country: str = "") -> str:
@@ -170,8 +170,19 @@ class DHLClient(CarrierClient):
             else:
                 barcode_id = pieces[0].get("barcodeId", "")
 
-        # Spara TI-data i cache (behövs för Print API:s printdocuments)
-        self._ti_cache[ti_id] = ti
+        # Spara TI i cache: merge request (parties, etc.) med response (id, pieces med barcode)
+        # Behövs för Print API och PickupRequest (DHL kräver full payload)
+        merged = {**payload}
+        merged["id"] = ti_id
+        our_pieces = payload.get("pieces", [])
+        if pieces and our_pieces:
+            # Behåll våra dimensioner, använd DHL:s id (barcode)
+            merged_piece = {**our_pieces[0]}
+            merged_piece["id"] = pieces[0].get("id", our_pieces[0].get("id", [""]))
+            merged["pieces"] = [merged_piece]
+        else:
+            merged["pieces"] = pieces if pieces else our_pieces
+        self._ti_cache[ti_id] = merged
 
         logger.info(
             f"DHL: Sändning skapad — id={ti_id}, "
@@ -419,21 +430,28 @@ class DHLClient(CarrierClient):
     # ------------------------------------------------------------------
 
     def find_service_points(self, zipcode: str, country: str = "SE",
-                            max_results: int = 5) -> list:
+                            street: str = "", city: str = "",
+                            max_results: int = 10) -> list:
         """Hittar närmaste DHL-ombud via ServicePointLocator API.
 
-        GET /servicepointlocatorapi/v1/servicepoint/findnearestservicepoints
+        POST med address i body (DHL rekommenderar hela adressen).
+        Ref: Sample-findnearestservicepoints-request.txt
         """
         logger.info(f"DHL: Söker ombud nära {zipcode}, {country}")
 
         url = f"{self.base_url}{API_PATHS['service_points']}"
-        response = self.session.get(
-            url,
-            params={
+        payload = {
+            "address": {
+                "street": street or "Adress",
+                "cityName": city or "",
                 "postalCode": zipcode,
                 "countryCode": country,
-                "maxResults": max_results,
             },
+            "maxNumberOfItems": max_results,
+        }
+        response = self.session.post(
+            url,
+            json=payload,
             timeout=self.timeout,
         )
         response.raise_for_status()
@@ -446,44 +464,114 @@ class DHLClient(CarrierClient):
     # PickupRequest API
     # ------------------------------------------------------------------
 
-    def request_pickup(self, shipment_id: str, pickup_date: str) -> dict:
+    def request_pickup(self, shipment_id: str, pickup_date: str,
+                       pickup_instruction: str = "") -> dict:
         """Bokar upphämtning via PickupRequest API (IFTMBF).
+
+        DHL kräver full pickup instruction med samma struktur som TransportInstruction.
+        Ref: https://dhlpaket.se/dashboard/services/api-farm/pickuprequest/
 
         POST /pickuprequestapi/v1/pickuprequest/pickuprequest
         """
         logger.info(f"DHL: Bokar upphämtning {shipment_id} för {pickup_date}")
 
+        ti_data = self._ti_cache.get(shipment_id)
+        if not ti_data:
+            raise RuntimeError(
+                f"Ingen cachad TI-data för {shipment_id}. "
+                "Anropa create_shipment() först."
+            )
+
+        # Bygg full pickup instruction (IFTMBF) — DHL kräver all info
+        pickup_payload = self._build_pickup_instruction(
+            ti_data, shipment_id, pickup_date, pickup_instruction
+        )
+
         url = f"{self.base_url}{API_PATHS['pickup_request']}"
         response = self.session.post(
             url,
-            json={
-                "transportInstructionId": shipment_id,
-                "pickupDate": pickup_date,
-            },
+            json=pickup_payload,
             timeout=self.timeout,
         )
         response.raise_for_status()
+        data = response.json()
 
-        logger.info(f"DHL: Upphämtning bokad")
-        return response.json()
+        # Tolka status: 0/"Accepted"=OK, 1/"Rejected"=avvisad, 2/"Moved"=flyttad
+        status = data.get("status", -1)
+        ok = status in (0, "Accepted", "0") or (
+            isinstance(status, str) and status.lower() == "accepted"
+        )
+        if ok:
+            logger.info(f"DHL: Upphämtning bokad — {data.get('bookingNumber', '')}")
+        elif status in (1, "Rejected", "1"):
+            logger.warning(f"DHL: Upphämtning avvisad — {data}")
+        elif status in (2, "Moved", "2"):
+            logger.info(
+                f"DHL: Upphämtning flyttad till annat datum — "
+                f"{data.get('pickupDateTime', data.get('pickupDate', ''))}"
+            )
+
+        return data
+
+    def _build_pickup_instruction(
+        self,
+        ti_data: dict,
+        shipment_id: str,
+        pickup_date: str,
+        pickup_instruction: str,
+    ) -> dict:
+        """Bygger PickupRequestModel enligt DHL-exempel.
+
+        Ref: pickupInstruction-request-service-point-103.txt
+        - pickupDate: enkel datumsträng (yyyy-MM-dd)
+        - Consignor id: kundnummer från sender_config
+        """
+        payload = dict(ti_data)
+        payload["id"] = str(shipment_id)
+        # DHL-exempel använder enkel datumsträng "2020-01-04"
+        payload["pickupDate"] = pickup_date
+        payload["pickupInstruction"] = pickup_instruction or "Upphämtning bokad via GARP"
+        return payload
 
     # ------------------------------------------------------------------
     # Payload-bygge
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _service_point_to_access_point(sp: dict) -> dict:
+        """Konverterar ServicePointLocator-svar till AccessPoint-party.
+
+        Ref: DHL-exempel parties[].type=AccessPoint
+        """
+        return {
+            "id": str(sp.get("id", "")),
+            "type": "AccessPoint",
+            "name": str(sp.get("name", "")),
+            "address": {
+                "street": str(sp.get("street", "")),
+                "cityName": str(sp.get("cityName", "")),
+                "postalCode": str(sp.get("postalCode", "")),
+                "countryCode": str(sp.get("countryCode", "SE")),
+            },
+        }
 
     def _build_transport_instruction(self, shipment: Shipment) -> dict:
         """Bygger JSON-payload för TransportInstruction API.
 
         Verifierat format mot DHL sandbox (status 200):
         - parties[].address: nested objekt med street, cityName, postalCode, countryCode
-        - references: string array (ej objekt-array)
-        - additionalServices: objekt med bool-värden, t.ex. {"notification": true}
+        - För 103/104: AccessPoint hämtas via ServicePointLocator (närmaste ombud)
+        - additionalServices: objekt med bool-värden
         - pieces[].id: string array ['']
-        - postalCode: rensad från landskod-prefix (DK-5220 → 5220)
 
         Ref: DHL Produktmanual v5.23 + verifierad sandbox-test
         """
         recv = shipment.receiver
+        if not recv:
+            raise ValueError(
+                f"Order {shipment.order_no} saknar mottagarinfo. "
+                "DHL kräver receiver i sändningen."
+            )
         container = shipment.containers[0] if shipment.containers else None
         product_code = shipment.service.product_code
 
@@ -501,6 +589,25 @@ class DHLClient(CarrierClient):
         # Rensa postnummer från landskod-prefix
         sender_zip = clean_postal_code(self.sender.get("zipcode", ""))
         recv_zip = clean_postal_code(recv.zipcode)
+
+        # För 103/104: hämta närmaste ombud via ServicePointLocator
+        access_point = None
+        if product_code in PRODUCTS_REQUIRING_ACCESSPOINT and recv.zipcode:
+            points = self.find_service_points(
+                recv_zip,
+                recv.country or "SE",
+                street=recv.address1,
+                city=recv.city,
+                max_results=1,
+            )
+            if points:
+                access_point = self._service_point_to_access_point(points[0])
+                logger.info(f"  Ombud: {access_point.get('name', '')} ({access_point.get('id', '')})")
+            else:
+                raise ValueError(
+                    f"Order {shipment.order_no}: Inget DHL-ombud hittades "
+                    f"nära {recv_zip}. Produkt {product_code} kräver ServicePoint."
+                )
 
         # Parties — address MÅSTE vara nested objekt
         parties = [
@@ -532,6 +639,8 @@ class DHLClient(CarrierClient):
                 "email": recv.email,
             },
         ]
+        if access_point:
+            parties.append(access_point)
 
         # Pakettyp — standardmappning per produktkod
         if container and container.package_code:

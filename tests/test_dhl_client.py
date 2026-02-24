@@ -346,6 +346,53 @@ class TestAPIURLs:
         assert "/pickuprequestapi/v1/" in API_PATHS["pickup_request"]
 
 
+class TestPickupRequest:
+    """Testar PickupRequest API — DHL kräver full payload (IFTMBF)."""
+
+    def test_request_pickup_sends_full_payload(self, client, sample_shipment):
+        """PickupRequest ska skicka full instruction, ej bara id + datum."""
+        mock_ti_response = MagicMock()
+        mock_ti_response.status_code = 200
+        mock_ti_response.json.return_value = {
+            "status": "Succes",
+            "transportInstruction": {
+                "id": "12345",
+                "productCode": "102",
+                "pieces": [{"id": ["BARCODE123"], "packageType": "PKT"}],
+            },
+        }
+        mock_ti_response.raise_for_status = MagicMock()
+
+        mock_pickup_response = MagicMock()
+        mock_pickup_response.status_code = 200
+        mock_pickup_response.json.return_value = {"status": 0, "bookingNumber": "BK123"}
+        mock_pickup_response.raise_for_status = MagicMock()
+
+        with patch.object(
+            client.session, "post", side_effect=[mock_ti_response, mock_pickup_response]
+        ) as mock_post:
+            client.create_shipment(sample_shipment)
+            result = client.request_pickup("12345", "2026-02-19")
+
+        assert result["status"] == 0
+        calls = mock_post.call_args_list
+        pickup_call = calls[1]
+        payload = pickup_call[1]["json"]
+
+        # Full payload med parties, pieces, etc. (enligt DHL-exempel)
+        assert payload["id"] == "12345"
+        assert payload["pickupDate"] == "2026-02-19"  # Enkel datumsträng
+        assert "parties" in payload
+        assert "pieces" in payload
+        assert "totalWeight" in payload
+        assert "pickupInstruction" in payload
+
+    def test_request_pickup_no_cache_raises(self, client):
+        """Utan cachad TI ska RuntimeError kastas."""
+        with pytest.raises(RuntimeError, match="Ingen cachad TI-data"):
+            client.request_pickup("nonexistent", "2026-02-19")
+
+
 class TestAddonMapping:
     """Verifiera tilläggstjänst-mappning."""
 

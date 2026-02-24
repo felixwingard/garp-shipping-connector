@@ -5,6 +5,5 @@ pystray>=0.19.0
 Pillow>=9.0.0
 pytest>=8.0.0
 
-# Windows-specifika (installera på lagerdatorn)
-# pywin32>=306
-# pyinstaller>=6.0
+# Windows — för bygg av .exe (kör på Windows)
+# pip install pywin32 pyinstaller

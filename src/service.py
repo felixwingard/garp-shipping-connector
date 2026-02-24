@@ -21,29 +21,9 @@ logger = logging.getLogger(__name__)
 
 def _load_config() -> dict:
     """Laddar YAML-konfiguration med miljövariabelersättning."""
-    import os
-    import re
-    import yaml
-    from pathlib import Path
+    from .utils.config import load_config
 
-    # Konfigurationsfilen ligger bredvid .exe eller i projektrot
-    if getattr(sys, 'frozen', False):
-        exe_dir = Path(sys.executable).parent
-    else:
-        exe_dir = Path(__file__).parent.parent
-
-    config_path = exe_dir / "config" / "config.yaml"
-
-    with open(config_path, "r", encoding="utf-8") as f:
-        raw = f.read()
-
-    # Ersätt ${ENV_VAR} med miljövariabler
-    def replace_env(match):
-        var_name = match.group(1)
-        return os.environ.get(var_name, match.group(0))
-
-    resolved = re.sub(r'\$\{(\w+)\}', replace_env, raw)
-    return yaml.safe_load(resolved)
+    return load_config()
 
 
 def _setup_logging(config: dict):

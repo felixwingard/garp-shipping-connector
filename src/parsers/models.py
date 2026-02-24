@@ -10,6 +10,7 @@ from enum import Enum
 class CarrierType(Enum):
     DHL = "DHL"
     POSTNORD = "PN"
+    BRING = "BRING"
 
 
 @dataclass

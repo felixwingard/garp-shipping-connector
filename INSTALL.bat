@@ -36,16 +36,13 @@ echo  [3/4] Skapar konfiguration...
 if not exist "config\config.yaml" (
     copy "config\config.example.yaml" "config\config.yaml" >nul
 
-    REM Satt sandbox API-nyckel direkt
-    powershell -Command "(Get-Content 'config\config.yaml') -replace '\$\{DHL_API_KEY\}', '7b096bbb-e55b-4882-9668-2b143b4b53d4' | Set-Content 'config\config.yaml'"
-
     REM Satt tomma SMTP-varden sa programmet inte kraschar
     powershell -Command "(Get-Content 'config\config.yaml') -replace '\$\{SMTP_USERNAME\}', '' | Set-Content 'config\config.yaml'"
     powershell -Command "(Get-Content 'config\config.yaml') -replace '\$\{SMTP_PASSWORD\}', '' | Set-Content 'config\config.yaml'"
     powershell -Command "(Get-Content 'config\config.yaml') -replace '\$\{SMTP_FROM_ADDRESS\}', '' | Set-Content 'config\config.yaml'"
     powershell -Command "(Get-Content 'config\config.yaml') -replace '\$\{SENDER_EMAIL\}', '' | Set-Content 'config\config.yaml'"
 
-    echo         config.yaml skapad med DHL sandbox-nyckel!
+    echo         config.yaml skapad - fyll i DHL_API_KEY i config!
 ) else (
     echo         config.yaml finns redan, behaller befintlig.
 )
@@ -60,8 +57,8 @@ echo  ============================================
 echo   INSTALLATIONEN KLAR!
 echo  ============================================
 echo.
-echo   DHL API: Sandbox (testmiljo)
-echo   Kundnummer: 101733
+echo   Fyll i config\config.yaml med era API-nycklar
+echo   (eller sat miljovariablerna innan start)
 echo.
 echo   Starta programmet:
 echo     - Dubbelklicka "GARP Shipping" pa skrivbordet

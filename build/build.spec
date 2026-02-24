@@ -10,6 +10,7 @@ a = Analysis(
         ('../config/config.example.yaml', 'config'),
     ],
     hiddenimports=[
+        'src.utils.config',
         'win32timezone',
         'win32serviceutil',
         'win32service',

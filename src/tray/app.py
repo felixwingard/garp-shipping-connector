@@ -77,6 +77,13 @@ class TrayApp:
         self.root.withdraw()
         self.root.title("GARP Shipping Connector")
 
+        # Tema för clean UI
+        try:
+            from .theme import apply_theme
+            apply_theme(self.root)
+        except Exception as e:
+            logger.debug(f"Tema kunde inte appliceras: {e}")
+
         # Gör så att stängning av root avslutar appen
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
 
@@ -185,12 +192,13 @@ class TrayApp:
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
-                "Inställningar...",
-                lambda icon, item: self._queue.put({"action": "show_settings"}),
+                "Status",
+                lambda icon, item: self._queue.put({"action": "show_status"}),
+                default=True,
             ),
             pystray.MenuItem(
-                "Status / Historik",
-                lambda icon, item: self._queue.put({"action": "show_status"}),
+                "Inställningar",
+                lambda icon, item: self._queue.put({"action": "show_settings"}),
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
@@ -338,6 +346,7 @@ class TrayApp:
         self._status_window = StatusWindow(
             self.root,
             self.shipment_history,
+            log_dir=getattr(self, "_log_dir", None),
         )
 
     def _on_settings_saved(self, new_config: dict):
@@ -358,40 +367,10 @@ class TrayApp:
 
     def _load_config(self):
         """Laddar config.yaml."""
-        import os
-        import re
-        import yaml
+        from ..utils.config import load_config, get_config_path
 
-        if getattr(sys, 'frozen', False):
-            exe_dir = Path(sys.executable).parent
-        else:
-            exe_dir = Path(__file__).parent.parent.parent
-
-        config_path = exe_dir / "config" / "config.yaml"
-
-        if not config_path.exists():
-            # Prova exempelfilen
-            example = config_path.with_name("config.example.yaml")
-            if example.exists():
-                import shutil
-                shutil.copy(str(example), str(config_path))
-                logger.info(f"Skapade config.yaml från exempelfil")
-            else:
-                raise FileNotFoundError(
-                    f"Konfigurationsfil saknas: {config_path}\n"
-                    f"Kopiera config.example.yaml till config.yaml"
-                )
-
-        with open(config_path, "r", encoding="utf-8") as f:
-            raw = f.read()
-
-        def replace_env(match):
-            var_name = match.group(1)
-            return os.environ.get(var_name, match.group(0))
-
-        resolved = re.sub(r'\$\{(\w+)\}', replace_env, raw)
-        self.config = yaml.safe_load(resolved)
-        self._config_path = config_path
+        self.config = load_config()
+        self._config_path = get_config_path()
 
     def _setup_logging(self):
         """Konfigurerar logging med roterande filer."""

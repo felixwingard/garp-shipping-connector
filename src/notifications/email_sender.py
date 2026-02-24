@@ -17,10 +17,12 @@ logger = logging.getLogger(__name__)
 # Spårningslänkar per transportör
 TRACKING_URLS = {
     CarrierType.DHL: "https://www.dhl.com/se-sv/home/tracking.html?tracking-id={tracking}",
+    CarrierType.BRING: "https://sporing.posten.no/sporing/{tracking}",
 }
 
 CARRIER_NAMES = {
     CarrierType.DHL: "DHL",
+    CarrierType.BRING: "Bring/Posten",
 }
 
 
