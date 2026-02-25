@@ -76,6 +76,54 @@ class TestParseFile:
         assert s.receiver.city == "OSLO"
         assert s.containers[0].weight == 8.2
 
+    def test_parse_garp_format_legacy_srvid(self, parser):
+        """Format från GARP-export med legacy srvid (ASPO = DHL ServicePoint)."""
+        filepath = FIXTURES_DIR / "sample_garp_format.xml"
+        shipments = parser.parse_file(filepath)
+
+        assert len(shipments) == 1
+        s = shipments[0]
+
+        # Order
+        assert s.order_no == "W66344-133251"
+        assert s.reference == "W66344-133251"
+        assert s.sender_name == "ERNSTP"
+        assert s.term_code == "S"
+
+        # Mottagare
+        assert s.receiver.rcvid == "WEB"
+        assert s.receiver.name == "Niklas Persson"
+        assert s.receiver.address1 == "Boarps backar 149"
+        assert s.receiver.zipcode == "264 94"
+        assert s.receiver.city == "Klippan"
+        assert s.receiver.phone == "+46700322585"
+        assert s.receiver.sms == "+46700322585"
+        assert s.receiver.email == "felix@ernstp.se"
+
+        # Legacy ASPO mappas till DHL:103
+        assert s.service.carrier == CarrierType.DHL
+        assert s.service.product_code == "103"
+        assert s.service.raw_srvid == "ASPO"
+
+        # Bokning
+        assert s.service.booking is not None
+        assert s.service.booking.pickup_booking is True
+        assert s.service.booking.pickup_date == "2026-02-25"
+
+        # Container (PC mappas till PKT i DHL-klienten)
+        assert len(s.containers) == 1
+        c = s.containers[0]
+        assert c.copies == 1
+        assert c.weight == 1.0
+        assert c.package_code == "PC"
+        assert c.contents == "material"
+        assert c.volume == 0.0
+
+        # E-postnotifiering
+        assert len(s.notifications) == 1
+        assert s.notifications[0].opt_id == "enot"
+        assert "W66344" in s.notifications[0].message
+
 
 class TestParseSrvid:
     """Tester för srvid-parsning."""
@@ -109,6 +157,19 @@ class TestParseSrvid:
         assert carrier == CarrierType.BRING
         assert code == "BUSINESS_PARCEL_BULK"
         assert addon == ""
+
+    def test_legacy_aspo(self, parser):
+        """ASPO (Unifaun) mappas till DHL:103."""
+        carrier, code, addon = parser._parse_srvid("ASPO")
+        assert carrier == CarrierType.DHL
+        assert code == "103"
+        assert addon == ""
+
+    def test_mojibake_fix(self, parser):
+        """UTF-8 felaktigt tolkat som Latin-1 repareras (Ã¤ → ä)."""
+        assert parser._fix_mojibake("Ã¤r") == "är"
+        assert parser._fix_mojibake("Stockholm") == "Stockholm"
+        assert parser._fix_mojibake("") == ""
 
     def test_invalid_format(self, parser):
         with pytest.raises(ValueError, match="Ogiltig srvid"):

@@ -1,6 +1,7 @@
 # GARP Shipping Connector — Konfiguration
 # Kopiera till config.yaml och fyll i era uppgifter.
 
+# skip_email: true   # Sätt för att hoppa över kundmail (t.ex. vid test)
 # Mappar
 paths:
   watch_dir: "C:\\GARP\\Unifaun\\Outgoing"    # GARP droppar XML här
@@ -8,6 +9,8 @@ paths:
   error_dir: "C:\\GARP\\Unifaun\\Error"        # Felfiler hamnar här
   log_dir: "C:\\GARP\\Logs"                    # Loggfiler
   label_cache_dir: "C:\\GARP\\Labels"          # Backup av etiketter (PDF)
+  # GARP-följesedel: PDF med samma namn som ordernummer i watch_dir bifogas i kundmail.
+  # T.ex. 107739-132888.pdf vid XML med orderno 107739-132888.
 
 # Avsändarinformation (Ernst P AB)
 sender:
@@ -18,7 +21,10 @@ sender:
   country: "SE"
   phone: "+46317030770"
   email: "${SENDER_EMAIL}"              # Er avsändar-e-post
-  customer_number_dhl: "XXXXXX"         # Ert DHL-kundnummer
+  customer_number_dhl: "ERT_KUNDNUMMER"  # För domestic_countries
+  customer_number_dhl_international: "ERT_UTRIKES_NR"   # För övriga länder
+  # Länder som använder inrikes-nr (t.ex. SE, DK, NO, FI). Övriga → utrikes-nr.
+  customer_number_dhl_domestic_countries: ["SE", "DK", "NO", "FI"]
   customer_number_bring: ""             # Bring-kundnummer (alternativ till bring.customer_number)
 
 # DHL Paket Sverige API
@@ -27,8 +33,10 @@ sender:
 dhl:
   # Sandbox: https://test-api.freight-logistics.dhl.com
   # Produktion: https://api.freight-logistics.dhl.com
-  base_url: "https://test-api.freight-logistics.dhl.com"
-  api_key: "${DHL_API_KEY}"            # Sätt som miljövariabel (client-key GUID)
+  base_url: "https://api.freight-logistics.dhl.com"
+  api_key: "ER_PRODUKTIONSNYCKEL"      # Er DHL client-key (GUID) från DHL
+  eid_username: "${DHL_EID_USERNAME}"  # För PriceQuote avtalspris — begär från DHL
+  eid_password: "${DHL_EID_PASSWORD}"
   timeout_seconds: 30
   retry_attempts: 3
   retry_delay_seconds: 5
@@ -55,14 +63,19 @@ printers:
   document_format: "pdf"
 
 # SMTP (Loopia) — för kundmail med spårningslänk
+# Skapa adressen no-reply@ernstp.se i Loopia (eller använd befintlig).
 smtp:
   host: "mailcluster.loopia.se"
   port: 587
   username: "${SMTP_USERNAME}"         # Sätt som miljövariabel
   password: "${SMTP_PASSWORD}"         # Sätt som miljövariabel
   use_tls: true
-  from_address: "${SMTP_FROM_ADDRESS}"  # t.ex. order@example.com
+  from_address: "${SMTP_FROM_ADDRESS}"  # Rekommenderat: no-reply@ernstp.se (automatmail)
   from_name: "Ernst P AB"
+  # Länk till Google-omdöme (visas i mailet om satt)
+  google_review_url: "https://www.google.com/maps/place//data=!4m3!3m2!1s0x464ff3ba65497121:0x4df5d9552fab788a!12e1?source=g.page.m._&laa=merchant-review-solicitation"
+  company_contact_email: "info@ernstp.se"
+  company_contact_phone: "031-703 07 70"
 
 # Mappbevakning
 watcher:
@@ -78,6 +91,9 @@ logging:
 
 # =============================================================
 # DHL produktkoder (srvid-format i GARP: DHL:PRODUKTKOD[:TILLÄGG])
+#
+# Legacy GARP/Unifaun-koder mappas automatiskt:
+#   ASPO → DHL:103 (ServicePoint B2C)
 #
 # Produkt  | Namn                    | Notering
 # ---------|-------------------------|----------------------------------

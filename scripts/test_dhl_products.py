@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""DHL API-test per produkt — för DHLs godkännande av produktionsnyckel.
+"""DHL API-test — testar alla DHL Freight API Farm-endpoints.
 
-Kör hela flödet per produkt:
-  1. TransportInstruction API — skapa sändning
-  2. Print API — hämta etikett
-  3. PickupRequest API — boka upphämtning (om produkt stödjer det)
+Testade API:er:
+  1. ServicePointLocator API — hitta ombud (standalone)
+  2. TransportInstruction API — skapa sändning
+  3. Print API — hämta etikett + fraktlista
+  4. PickupRequest API — boka upphämtning
 
 Användning:
-  python scripts/test_dhl_products.py              # Testa produkt 102
-  python scripts/test_dhl_products.py --product 103
-  python scripts/test_dhl_products.py --product 102 103 210  # Flera produkter
+  python scripts/test_dhl_products.py --all      # Alla produkter (102,103,109,210,211)
+  python scripts/test_dhl_products.py            # Endast produkt 102
+  python scripts/test_dhl_products.py --product 102 103 210
   python scripts/test_dhl_products.py --no-pickup  # Hoppa över PickupRequest
 
 Ref: https://dhlpaket.se/dashboard/services/uncategorized/api-farm-2/
@@ -183,6 +184,9 @@ def run_product_test(client: DHLClient, product_code: str, do_pickup: bool) -> d
             "label_bytes": len(documents["label"]),
             "shipment_list": documents.get("shipment_list") is not None,
         }
+        result["label_data"] = documents["label"]
+        result["shipment_list_data"] = documents.get("shipment_list")
+        result["order_no"] = order_no
 
         # 3. PickupRequest
         if do_pickup:
@@ -214,22 +218,47 @@ def run_product_test(client: DHLClient, product_code: str, do_pickup: bool) -> d
     return result
 
 
+def run_servicepoint_test(client: DHLClient) -> dict:
+    """Testar ServicePointLocator API (standalone)."""
+    try:
+        points = client.find_service_points("11122", "SE", city="Stockholm", max_results=5)
+        return {
+            "ok": len(points) > 0,
+            "count": len(points),
+            "first": points[0].get("name", "") if points else "",
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="Testa DHL API per produkt (TransportInstruction, Print, PickupRequest)"
+        description="Testa alla DHL API:er (ServicePointLocator, TransportInstruction, Print, PickupRequest)"
     )
     parser.add_argument(
         "--product",
         nargs="+",
-        default=["102"],
+        default=None,
         help="Produktkoder att testa (102, 103, 109, 210, 211)",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Testa alla produkter: 102, 103, 109, 210, 211",
     )
     parser.add_argument(
         "--no-pickup",
         action="store_true",
         help="Hoppa över PickupRequest (för snabbare test)",
     )
+    parser.add_argument(
+        "--save-labels",
+        action="store_true",
+        help="Spara etiketter till label_cache_dir (paths.label_cache_dir)",
+    )
     args = parser.parse_args()
+
+    products = args.product if args.product is not None else (["102", "103", "109", "210", "211"] if args.all else ["102"])
 
     print("=" * 60)
     print("DHL API Farm — Produkttest")
@@ -252,12 +281,21 @@ def main():
     base_url = dhl_config.get("base_url", "")
     env_name = "Sandbox" if "test-api" in base_url else "Produktion"
     print(f"Miljö: {env_name}")
-    print(f"Produkter: {', '.join(args.product)}")
+    print(f"Produkter: {', '.join(products)}")
     print(f"PickupRequest: {'Nej' if args.no_pickup else 'Ja'}")
     print()
 
-    all_ok = True
-    for product_code in args.product:
+    # 0. ServicePointLocator API (standalone)
+    print("[ServicePointLocator] Hittar ombud nära 11122 Stockholm...")
+    sp_result = run_servicepoint_test(client)
+    if sp_result.get("ok"):
+        print(f"  OK — {sp_result['count']} ombud, t.ex. {sp_result.get('first', '')[:40]}")
+    else:
+        print(f"  MISSLYCKAD — {sp_result.get('error', '')}")
+    print()
+
+    all_ok = sp_result.get("ok", True)  # ServicePointLocator måste lyckas
+    for product_code in products:
         result = run_product_test(client, product_code, do_pickup=not args.no_pickup)
         status = "OK" if result.get("ok") else "MISSLYCKAD" if not result.get("skip") else "HOPPAD ÖVER"
         print(f"[{status}] {result.get('name', product_code)}")
@@ -270,6 +308,19 @@ def main():
                 print(result["traceback"][:500])
             all_ok = False
             continue
+        # Spara etiketter om --save-labels
+        if args.save_labels and result.get("label_data") and result.get("order_no"):
+            label_dir = Path(config.get("paths", {}).get("label_cache_dir", "C:\\GARP\\Labels"))
+            if str(label_dir).startswith("C:") and Path("/").exists():  # Windows path på Mac/Linux
+                label_dir = Path(__file__).parent.parent / "test_labels"
+            label_dir = Path(label_dir)
+            label_dir.mkdir(parents=True, exist_ok=True)
+            label_path = label_dir / f"{result['order_no']}.pdf"
+            label_path.write_bytes(result["label_data"])
+            if result.get("shipment_list_data"):
+                list_path = label_dir / f"{result['order_no']}_shipmentlist.pdf"
+                list_path.write_bytes(result["shipment_list_data"])
+            print(f"  → Etikett sparad: {label_path}")
         for step, step_result in result.get("steps", {}).items():
             if step_result.get("skipped"):
                 print(f"  - {step}: (hoppad)")

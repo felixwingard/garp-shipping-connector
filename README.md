@@ -54,6 +54,7 @@ set SMTP_FROM_ADDRESS=order@ertforetag.se
 
 **Sandbox (test):**
 - URL: `https://test-api.freight-logistics.dhl.com`
+- Kundnummer: `111111` (DHL:s test-kundnummer)
 - Begär test-nyckel hos DHL
 
 **Produktion:**
@@ -116,6 +117,8 @@ Se `config.example.yaml` för full produktlista.
 | `label_cache_dir` | Backup av utskrivna etiketter (PDF) |
 | `log_dir` | `garp_shipping.log`, `garp_shipping_errors.log` |
 
+**Bilagor i kundmail:** DHL:s fraktlista bifogas automatiskt. Om GARP exporterar en följesedel-PDF med samma namn som ordernumret (t.ex. `107739-132888.pdf`), eller med samma namn som XML-filen (t.ex. `order.xml` → `order.pdf`), i samma mapp som XML:en, bifogas den också.
+
 ---
 
 ## Testa
@@ -125,17 +128,24 @@ Se `config.example.yaml` för full produktlista.
 pytest tests/ -v
 ```
 
-**DHL API-test per produkt** (för DHLs godkännande av produktionsnyckel):
+**DHL API-test** — testar alla endpoints (för DHLs godkännande):
 
-DHL kräver kompletta tester med TransportInstruction, Print API och PickupRequest per produkt.
-Kör testskriptet mot sandbox:
+1. ServicePointLocator — hitta ombud
+2. TransportInstruction — skapa sändning
+3. Print — etikett + fraktlista
+4. PickupRequest — boka upphämtning
+
+Sätt `DHL_API_KEY` i miljö eller config.yaml. Kundnummer `111111` för sandbox.
 
 ```
-# Testa DHL Paket (102) — full flöde
+# Alla produkter (102, 103, 109, 210, 211)
+python scripts/test_dhl_products.py --all
+
+# Endast 102
 python scripts/test_dhl_products.py
 
-# Testa flera produkter
-python scripts/test_dhl_products.py --product 102 210 211
+# Flera produkter
+python scripts/test_dhl_products.py --product 102 103 210
 
 # Utan PickupRequest (snabbare)
 python scripts/test_dhl_products.py --no-pickup

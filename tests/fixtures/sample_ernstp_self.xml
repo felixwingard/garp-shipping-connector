@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+ <receiver rcvid="ERNSTP">
+  <val n="name">Ernst P AB</val>
+  <val n="address1">Möbelgatan 5</val>
+  <val n="address2"></val>
+  <val n="zipcode">431 33</val>
+  <val n="city">Mölndal</val>
+  <val n="country">SE</val>
+  <val n="phone">+46317030770</val>
+  <val n="fax"></val>
+  <val n="sms"></val>
+  <val n="contact"></val>
+  <val n="email">lager@ernstp.se</val>
+ </receiver>
+ <shipment orderno="W66344-133254">
+  <val n="from">ERNSTP</val>
+  <val n="termcode">S</val>
+  <val n="to">ERNSTP</val>
+  <val n="deliveryinstruction"></val>
+  <val n="reference">W66344-133254</val>
+  <service srvid="DHL:102">
+   <addon adnid="">
+   </addon>
+   <booking>
+    <val n="pickupbooking">YES</val>
+    <val n="pickupdate">2026-02-26</val>
+   </booking>
+  </service>
+  <ufonline>
+   <option optid="enot">
+    <val n="message"></val>
+   </option>
+  </ufonline>
+  <container type="parcel" measure="total">
+   <val n="copies">1</val>
+   <val n="packagecode">PC</val>
+   <val n="contents">material</val>
+   <val n="weight">1.00</val>
+   <val n="volume">0.00</val>
+  </container>
+ </shipment>
+</data>

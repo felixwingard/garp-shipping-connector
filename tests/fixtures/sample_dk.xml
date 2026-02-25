@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<data>
+ <receiver rcvid="WEB">
+  <val n="name">Felix Vingård</val>
+  <val n="address1">Vesterbrogade 42</val>
+  <val n="address2">3. sal</val>
+  <val n="zipcode">1620</val>
+  <val n="city">København V</val>
+  <val n="country">DK</val>
+  <val n="phone">+4560123456</val>
+  <val n="fax"></val>
+  <val n="sms"></val>
+  <val n="contact"></val>
+  <val n="email">felix@ernstp.se</val>
+ </receiver>
+ <shipment orderno="W66344-133252">
+  <val n="from">ERNSTP</val>
+  <val n="termcode">S</val>
+  <val n="to">WEB</val>
+  <val n="deliveryinstruction"></val>
+  <val n="reference">W66344-133252</val>
+  <service srvid="DHL:109">
+   <addon adnid="">
+   </addon>
+   <booking>
+    <val n="pickupbooking">YES</val>
+    <val n="pickupdate">2026-02-26</val>
+   </booking>
+  </service>
+  <ufonline>
+   <option optid="enot">
+    <val n="message"></val>
+   </option>
+  </ufonline>
+  <container type="parcel" measure="total">
+   <val n="copies">1</val>
+   <val n="packagecode">PC</val>
+   <val n="contents">material</val>
+   <val n="weight">1.00</val>
+   <val n="volume">0.00</val>
+  </container>
+ </shipment>
+</data>

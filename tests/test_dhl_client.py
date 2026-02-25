@@ -37,6 +37,8 @@ def sender_config():
         "phone": "+46317030770",
         "email": "order@ernstp.se",
         "customer_number_dhl": "101733",
+        "customer_number_dhl_international": "20193498.SE0001",
+        "customer_number_dhl_domestic_countries": ["SE", "DK", "NO", "FI"],
     }
 
 
@@ -180,6 +182,28 @@ class TestBuildTransportInstruction:
     def test_payer_code(self, client, sample_shipment):
         payload = client._build_transport_instruction(sample_shipment)
         assert payload["payerCode"]["code"] == "1"
+
+    def test_payer_code_109_uses_ddp(self, client, sample_shipment):
+        """Produkt 109 (utrikes) kräver payerCode DDP, inte 1."""
+        sample_shipment.service.product_code = "109"
+        sample_shipment.receiver.country = "DE"
+        payload = client._build_transport_instruction(sample_shipment)
+        assert payload["payerCode"]["code"] == "DDP"
+
+    def test_consignor_id_international(self, client, sample_shipment):
+        """Utrikes (mottagarland != SE) använder customer_number_dhl_international."""
+        sample_shipment.receiver.country = "DE"
+        payload = client._build_transport_instruction(sample_shipment)
+        consignor = next(p for p in payload["parties"] if p.get("type") == "Consignor")
+        assert consignor["id"] == "20193498.SE0001"
+
+    def test_consignor_id_domestic(self, client, sample_shipment):
+        """Länder i domestic_countries (SE, DK, NO, FI) använder 101733."""
+        for country in ("SE", "DK", "NO", "FI"):
+            sample_shipment.receiver.country = country
+            payload = client._build_transport_instruction(sample_shipment)
+            consignor = next(p for p in payload["parties"] if p.get("type") == "Consignor")
+            assert consignor["id"] == "101733", f"Expected 101733 for {country}"
 
     def test_booking_date_as_shipping_date(self, client, sample_shipment):
         """Om bokning finns, anvand pickup_date som shippingDate."""
@@ -509,71 +533,55 @@ class TestGetAllDocuments:
     """Testar hämtning av alla dokument (label + shipmentList)."""
 
     def test_returns_label_and_list(self, client):
-        """Ska returnera label och shipmentList."""
+        """printdocumentsbyid returnerar label + shipmentList i ett anrop."""
         label_content = b"LABEL PDF"
         list_content = b"LIST PDF"
 
-        # Lägg till TI-data i cache
-        client._ti_cache["12345"] = {"id": "12345", "pieces": []}
-
-        # Mock label-anrop
-        label_response = MagicMock()
-        label_response.headers = {"Content-Type": "application/json"}
-        label_response.json.return_value = {
-            "reports": [{
-                "content": base64.b64encode(label_content).decode(),
-                "type": "Label",
-            }]
+        response = MagicMock()
+        response.headers = {"Content-Type": "application/json"}
+        response.json.return_value = {
+            "reports": [
+                {"content": base64.b64encode(label_content).decode(), "type": "Label"},
+                {"content": base64.b64encode(list_content).decode(), "type": "ShipmentList"},
+            ]
         }
-        label_response.raise_for_status = MagicMock()
+        response.raise_for_status = MagicMock()
 
-        # Mock list-anrop
-        list_response = MagicMock()
-        list_response.headers = {"Content-Type": "application/json"}
-        list_response.json.return_value = {
-            "reports": [{
-                "content": base64.b64encode(list_content).decode(),
-                "type": "ShipmentList",
-            }]
-        }
-        list_response.raise_for_status = MagicMock()
-
-        with patch.object(client.session, "post", side_effect=[label_response, list_response]):
+        with patch.object(client.session, "post", return_value=response):
             result = client.get_all_documents("12345")
 
         assert result["label"] == label_content
         assert result["shipment_list"] == list_content
 
     def test_returns_label_only_if_no_list(self, client):
-        """Ska returnera label med shipment_list=None om ej tillgänglig."""
+        """Ska returnera label med shipment_list=None om fraktlista saknas i svaret."""
         label_content = b"LABEL PDF"
 
-        client._ti_cache["12345"] = {"id": "12345", "pieces": []}
-
-        label_response = MagicMock()
-        label_response.headers = {"Content-Type": "application/json"}
-        label_response.json.return_value = {
-            "reports": [{
-                "content": base64.b64encode(label_content).decode(),
-                "type": "Label",
-            }]
+        response = MagicMock()
+        response.headers = {"Content-Type": "application/json"}
+        response.json.return_value = {
+            "reports": [
+                {"content": base64.b64encode(label_content).decode(), "type": "Label"},
+            ]
         }
-        label_response.raise_for_status = MagicMock()
+        response.raise_for_status = MagicMock()
 
-        # List-anrop misslyckas
-        list_response = MagicMock()
-        list_response.raise_for_status.side_effect = Exception("400 Bad Request")
-
-        with patch.object(client.session, "post", side_effect=[label_response, list_response]):
+        with patch.object(client.session, "post", return_value=response):
             result = client.get_all_documents("12345")
 
         assert result["label"] == label_content
         assert result["shipment_list"] is None
 
-    def test_no_cache_raises(self, client):
-        """Utan cachad TI-data ska RuntimeError kastas."""
-        with pytest.raises(RuntimeError, match="Ingen cachad TI-data"):
-            client.get_all_documents("nonexistent")
+    def test_no_label_in_response_raises(self, client):
+        """Om svaret inte innehåller Label ska RuntimeError kastas."""
+        response = MagicMock()
+        response.headers = {"Content-Type": "application/json"}
+        response.json.return_value = {"reports": []}
+        response.raise_for_status = MagicMock()
+
+        with patch.object(client.session, "post", return_value=response):
+            with pytest.raises(RuntimeError, match="Ingen etikett i svaret"):
+                client.get_all_documents("nonexistent")
 
 
 class TestPostalCodeInPayload:

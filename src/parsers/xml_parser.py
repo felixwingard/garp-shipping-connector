@@ -130,23 +130,36 @@ class GarpXMLParser:
             booking=booking,
         )
 
-    @staticmethod
-    def _parse_srvid(srvid: str) -> tuple[CarrierType, str, str]:
+    # Mappning av legacy GARP/Unifaun tjänstekoder → TRANSPORTÖR:PRODUKTKOD
+    # Används när XML har äldre koder (t.ex. ASPO) istället för DHL:103
+    LEGACY_SRVID_MAPPING = {
+        "ASPO": "DHL:103",   # DHL ServicePoint B2C (Unifaun)
+    }
+
+    @classmethod
+    def _parse_srvid(cls, srvid: str) -> tuple[CarrierType, str, str]:
         """Parsar srvid i formatet TRANSPORTÖR:PRODUKTKOD[:TILLÄGG].
+
+        Stödjer också legacy GARP/Unifaun-koder (ASPO m.fl.) via LEGACY_SRVID_MAPPING.
 
         Exempel:
             "DHL:104"       → (CarrierType.DHL, "104", "")
             "DHL:104:AVIS"  → (CarrierType.DHL, "104", "AVIS")
-            "PN:19"         → (CarrierType.POSTNORD, "19", "")
+            "ASPO"          → (CarrierType.DHL, "103", "")  # via mapping
 
         Raises:
             ValueError: Om srvid inte kan parsas.
         """
-        parts = srvid.split(":")
+        raw = srvid.strip()
+        # Kolla legacy-mappning först (t.ex. ASPO → DHL:103)
+        if ":" not in raw and raw in cls.LEGACY_SRVID_MAPPING:
+            raw = cls.LEGACY_SRVID_MAPPING[raw]
+
+        parts = raw.split(":")
         if len(parts) < 2:
             raise ValueError(
                 f"Ogiltig srvid: '{srvid}'. "
-                f"Förväntat format: TRANSPORTÖR:PRODUKTKOD[:TILLÄGG]"
+                f"Förväntat format: TRANSPORTÖR:PRODUKTKOD[:TILLÄGG] eller känd legacy-kod"
             )
 
         carrier_str = parts[0].strip().upper()
@@ -188,14 +201,29 @@ class GarpXMLParser:
         return notifications
 
     @staticmethod
+    def _fix_mojibake(text: str) -> str:
+        """Reparera UTF-8-misread-as-Latin1 (t.ex. Ã¤ → ä).
+
+        Uppstår när XML deklarerar ISO-8859-1 men filen är UTF-8.
+        """
+        if not text:
+            return text
+        try:
+            return text.encode("latin-1").decode("utf-8")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            return text
+
+    @staticmethod
     def _extract_vals(elem: Optional[ET.Element]) -> dict[str, str]:
         """Extraherar alla <val n="key">value</val> till dict.
 
         Hanterar GARP:s whitespace-padding genom att strippa alla värden.
+        Reparerar mojibake (UTF-8 felaktigt tolkat som Latin-1).
         """
         if elem is None:
             return {}
-        return {
-            v.get("n", ""): (v.text or "").strip()
-            for v in elem.findall("val")
-        }
+        result = {}
+        for v in elem.findall("val"):
+            raw = (v.text or "").strip()
+            result[v.get("n", "")] = GarpXMLParser._fix_mojibake(raw)
+        return result

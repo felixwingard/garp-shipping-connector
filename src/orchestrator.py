@@ -16,7 +16,7 @@ import shutil
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Callable
+from typing import Optional, Callable, List, Set, Tuple
 
 from .parsers.xml_parser import GarpXMLParser
 from .parsers.models import Shipment, CarrierType
@@ -41,6 +41,7 @@ class ShipmentOrchestrator:
         """
         self.config = config
         self.on_event = on_event
+        self.skip_email = config.get("skip_email", False)
         self.parser = GarpXMLParser()
 
         sender = config["sender"]
@@ -91,7 +92,7 @@ class ShipmentOrchestrator:
 
             for shipment in shipments:
                 try:
-                    self._process_single(shipment)
+                    self._process_single(shipment, xml_filepath=filepath)
                 except Exception as e:
                     logger.error(
                         f"Fel vid bearbetning av order {shipment.order_no}: {e}",
@@ -104,10 +105,10 @@ class ShipmentOrchestrator:
                     all_ok = False
 
             if all_ok:
-                self._move_to_done(filepath)
+                self._move_to_done(filepath, shipments)
                 self._notify("file_done", {"filename": filepath.name})
             else:
-                self._move_to_error(filepath, "Delvis misslyckad bearbetning")
+                self._move_to_error(filepath, "Delvis misslyckad bearbetning", shipments)
                 self._notify("file_error", {
                     "filename": filepath.name,
                     "error": "Delvis misslyckad bearbetning",
@@ -115,7 +116,7 @@ class ShipmentOrchestrator:
 
         except Exception as e:
             logger.error(f"XML-parsningsfel för {filepath.name}: {e}", exc_info=True)
-            self._move_to_error(filepath, str(e))
+            self._move_to_error(filepath, str(e), [])
             self._notify("file_error", {
                 "filename": filepath.name,
                 "error": str(e),
@@ -127,8 +128,12 @@ class ShipmentOrchestrator:
 
         return all_ok
 
-    def _process_single(self, shipment: Shipment):
-        """Bearbetar en enskild sändning genom hela kedjan."""
+    def _process_single(self, shipment: Shipment, xml_filepath: Optional[Path] = None):
+        """Bearbetar en enskild sändning genom hela kedjan.
+
+        xml_filepath: Sökväg till XML-filen — används för att hitta
+                      GARP-följesedel PDF i samma mapp ({order_no}.pdf).
+        """
         if not shipment.receiver:
             raise ValueError(
                 f"Order {shipment.order_no} saknar mottagarinfo. "
@@ -146,6 +151,7 @@ class ShipmentOrchestrator:
         )
 
         # 1. Skapa sändning hos transportör
+        shipment_id = ""
         if carrier == CarrierType.DHL:
             if shipment.service.product_code == "104":
                 raise ValueError(
@@ -190,39 +196,59 @@ class ShipmentOrchestrator:
                 f"Stödda: DHL, Bring"
             )
 
-        # 3. Spara etikett på disk (backup)
-        label_path = self.label_cache / f"{shipment.order_no}.pdf"
-        label_path.write_bytes(label_data)
-        logger.info(f"  Etikett sparad: {label_path}")
-
-        # 4. Skriv ut etikett (→ Zebra)
+        # 3. Skriv ut etikett (→ Zebra)
         printed = self.printer.print_label(label_data, "pdf", shipment.order_no)
         if not printed:
-            logger.warning(f"  Etikett-utskrift misslyckades — etiketten finns sparad på disk")
+            logger.warning(f"  Etikett-utskrift misslyckades för {shipment.order_no}")
 
-        # 5. Skriv ut fraktlista (→ A4) om den finns
+        # 4. Skriv ut fraktlista (→ A4) om den finns (sparas ej — bifogas mailet)
         if shipment_list:
-            list_path = self.label_cache / f"{shipment.order_no}_shipmentlist.pdf"
-            list_path.write_bytes(shipment_list)
             doc_printed = self.printer.print_document(shipment_list, "pdf", shipment.order_no)
             if doc_printed:
                 logger.info(f"  Fraktlista utskriven för order {shipment.order_no}")
             else:
-                logger.info(f"  Fraktlista sparad: {list_path} (ej utskriven)")
+                logger.warning(f"  Fraktlista utskriven misslyckades för {shipment.order_no}")
+
+        # 5. Estimerat leveransdatum (DHL TimeTable API)
+        estimated_delivery = ""
+        if carrier == CarrierType.DHL:
+            try:
+                estimated_delivery = (
+                    self.dhl.get_estimated_delivery_date(shipment) or ""
+                )
+            except Exception as e:
+                logger.debug(f"  Kunde inte hämta leveransdatum: {e}")
 
         # 6. Skicka kundmail (om e-post finns och enot-notifiering är aktiv)
         has_enot = any(n.opt_id == "enot" for n in shipment.notifications)
-        if shipment.receiver and shipment.receiver.email and has_enot:
-            custom_msg = next(
-                (n.message for n in shipment.notifications if n.opt_id == "enot"),
-                "",
-            )
+        if not self.skip_email and shipment.receiver and shipment.receiver.email and has_enot:
+            # Bilagor: DHL fraktlista + GARP följesedel (om PDF finns i samma mapp som XML)
+            attachments: List[Tuple[str, bytes]] = []
+            if shipment_list:
+                attachments.append((f"Fraktlista_{shipment.order_no}.pdf", shipment_list))
+            if xml_filepath:
+                # GARP kan exportera följesedel som {order_no}.pdf eller {xml-namn}.pdf
+                for candidate in [
+                    xml_filepath.parent / f"{shipment.order_no}.pdf",
+                    xml_filepath.parent / f"{xml_filepath.stem}.pdf",
+                ]:
+                    if candidate.exists():
+                        attachments.append(
+                            (f"Följesedel_{shipment.order_no}.pdf", candidate.read_bytes())
+                        )
+                        logger.info(f"  GARP-följesedel bifogas: {candidate.name}")
+                        break
             self.emailer.send_tracking_email(
                 to_email=shipment.receiver.email,
                 order_no=shipment.order_no,
                 tracking_number=tracking,
                 carrier=carrier,
-                custom_message=custom_msg,
+                product_code=shipment.service.product_code if shipment.service else "",
+                dhl_hamta_id=shipment_id if carrier == CarrierType.DHL else "",
+                custom_message="",
+                attachments=attachments if attachments else None,
+                receiver_country=(shipment.receiver.country or "").strip().upper(),
+                estimated_delivery_date=estimated_delivery,
             )
 
         logger.info(f"  KLAR: Order {shipment.order_no}, tracking: {tracking}")
@@ -259,14 +285,45 @@ class ShipmentOrchestrator:
         lock_path = filepath.with_suffix(".lock")
         lock_path.unlink(missing_ok=True)
 
-    def _move_to_done(self, filepath: Path):
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        dest = self.done_dir / f"{ts}_{filepath.name}"
-        shutil.move(str(filepath), str(dest))
-        logger.info(f"  Flyttad till Done: {dest.name}")
+    def _move_to_done(self, filepath: Path, shipments: list):
+        """Tar bort XML + följesedlar — allt utskrivet/klart, behövs ej längre."""
+        parent = filepath.parent
+        xml_stem = filepath.stem
 
-    def _move_to_error(self, filepath: Path, reason: str):
+        # Ta bort följesedlar (bifogade mailet)
+        pdfs_to_remove: Set[Path] = set()
+        for s in shipments:
+            candidate = parent / f"{s.order_no}.pdf"
+            if candidate.exists():
+                pdfs_to_remove.add(candidate)
+        stem_pdf = parent / f"{xml_stem}.pdf"
+        if stem_pdf.exists():
+            pdfs_to_remove.add(stem_pdf)
+        for pdf_path in pdfs_to_remove:
+            pdf_path.unlink(missing_ok=True)
+            logger.info(f"  Följesedel borttagen: {pdf_path.name}")
+
+        # Ta bort XML
+        filepath.unlink(missing_ok=True)
+        logger.info(f"  XML borttagen: {filepath.name}")
+
+    def _move_to_error(self, filepath: Path, reason: str, shipments: list):
+        """Flyttar XML + tillhörande följesedel-PDF:er till error_dir."""
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        parent = filepath.parent
+        xml_stem = filepath.stem
+
+        # Sök följesedlar
+        pdfs_to_move: Set[Path] = set()
+        for s in shipments:
+            candidate = parent / f"{s.order_no}.pdf"
+            if candidate.exists():
+                pdfs_to_move.add(candidate)
+        stem_pdf = parent / f"{xml_stem}.pdf"
+        if stem_pdf.exists():
+            pdfs_to_move.add(stem_pdf)
+
+        # Flytta XML
         dest = self.error_dir / f"{ts}_{filepath.name}"
         shutil.move(str(filepath), str(dest))
 
@@ -276,3 +333,9 @@ class ShipmentOrchestrator:
             encoding="utf-8",
         )
         logger.error(f"  Flyttad till Error: {dest.name} — {reason}")
+
+        # Flytta följesedlar
+        for pdf_path in pdfs_to_move:
+            dest_pdf = self.error_dir / f"{ts}_{pdf_path.name}"
+            shutil.move(str(pdf_path), str(dest_pdf))
+            logger.info(f"  Följesedel flyttad till Error: {dest_pdf.name}")

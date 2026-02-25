@@ -24,7 +24,7 @@ Referens: DHL Produktmanual v5.23
 from __future__ import annotations
 
 import logging
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import requests
@@ -45,6 +45,9 @@ API_PATHS = {
     "service_points": "/servicepointlocatorapi/v1/servicepoint/findnearestservicepoints",
     "pickup_request": "/pickuprequestapi/v1/pickuprequest/pickuprequest",
     "additional_services": "/additionalserviceapi/v1/additionalservices",
+    "price_quote": "/pricequoteapi/v1/pricequote/quoteforprice",
+    "price_quote_gross": "/pricequoteapi/v1/pricequote/quoteforgrossprice",
+    "timetable": "/timetableapi/v1/timetable/gettimetable",
 }
 
 # Mappning av tilläggstjänster (addon-kod i srvid -> DHL API-kod)
@@ -66,12 +69,58 @@ ADDON_MAPPING = {
 # 102/103/104/109: PKT (standardkolli)
 # 210 (Pall): 701=EUR-pall, 702=halvpall
 # 211 (Stycke): PKT
+# GARP/Unifaun kan skicka "PC" (parcel) — DHL kräver PKT för standardkolli
+PACKAGE_CODE_NORMALIZE = {"PC": "PKT"}
 PACKAGE_TYPE_DEFAULTS = {
     "210": "701",  # EUR-pall
 }
 
 # Produkter som kräver AccessPoint i parties (104 C2B retur stöds ej)
 PRODUCTS_REQUIRING_ACCESSPOINT = {"103"}
+
+# Payer code per produkt — 1=Consignor (inrikes), DDP=Delivered Duty Paid (utrikes 109)
+# API returnerar "Payercode 1 is not valid for product" för 109 utan denna override
+PAYER_CODE_BY_PRODUCT = {
+    "109": "DDP",  # Parcel Connect (utrikes)
+    "112": "DDP",  # Parcel Connect Plus (utrikes)
+    "202": "DDP",  # Euroconnect (utrikes)
+    "205": "DDP",  # Euroline (utrikes)
+}
+
+# PriceQuote API: dhlProductCode (Swagger ShipmentModel)
+# För utrikes pall: 210 är inrikes — använd t.ex. SPI/PPI för Polen
+DHL_PRODUCT_CODE_FOR_QUOTE = {
+    "102": "DHLPaket",
+    "103": "DHLPaket",  # ServicePoint = ombud; PriceQuote kan använda DHLPaket
+    "109": "DHLParcelConnect",
+    "112": "DHLParcelConnect",  # Plus = variant; prova samma som 109
+    "202": "DHLEuroconnect",
+    "205": "DHLEuroline",
+    "210": "DHLPall",
+    "211": "DHLStycke",
+    "SPI": "DHLStandardPalletInternational",
+    "PPI": "DHLPremiumPalletInternational",
+}
+
+
+def format_sender_name(name: str) -> str:
+    """Formaterar avsändarnamn till läsbar form (t.ex. ERNST P AB → Ernst P AB).
+
+    Bevarar AB, HB, KB etc. i versaler.
+    """
+    if not name or not name.strip():
+        return name
+    words = name.strip().split()
+    result = []
+    for w in words:
+        w_upper = w.upper()
+        if w_upper in ("AB", "HB", "KB", "GMBH", "AS", "OY"):
+            result.append(w_upper)
+        elif len(w) == 1:
+            result.append(w.upper())  # "P" förblir P
+        else:
+            result.append(w.capitalize())
+    return " ".join(result)
 
 
 def clean_postal_code(zipcode: str, country: str = "") -> str:
@@ -102,9 +151,22 @@ class DHLClient(CarrierClient):
     def __init__(self, config: dict, sender_config: dict):
         self.base_url = config["base_url"].rstrip("/")
         self.customer_number = sender_config.get("customer_number_dhl", "")
+        self.customer_number_international = sender_config.get(
+            "customer_number_dhl_international", ""
+        ) or self.customer_number
+        # Länder som använder inrikes kundnr. Övriga → utrikes. Default: Norden.
+        _dom = sender_config.get("customer_number_dhl_domestic_countries", None)
+        self._domestic_countries = (
+            {c.upper() for c in _dom} if _dom else {"SE"}
+        )
         self.sender = sender_config
         self.timeout = config.get("timeout_seconds", 30)
         self.session = self._create_session(config)
+        self._eid = None
+        eid_user = config.get("eid_username", "").strip()
+        eid_pass = config.get("eid_password", "").strip()
+        if eid_user and "${" not in eid_user and eid_pass and "${" not in eid_pass:
+            self._eid = {"userName": eid_user, "password": eid_pass}
 
         # Cache av transportInstruction-svar (behövs för Print API)
         # Nyckel: shipment_id (str), värde: dict (hela TI-objektet)
@@ -153,6 +215,15 @@ class DHLClient(CarrierClient):
 
         url = f"{self.base_url}{API_PATHS['transport_instruction']}"
         response = self.session.post(url, json=payload, timeout=self.timeout)
+        if response.status_code >= 400:
+            try:
+                err_body = response.json()
+                logger.error(
+                    f"DHL TransportInstruction {response.status_code}: "
+                    f"{err_body.get('UserMessage', err_body.get('Message', response.text[:300]))}"
+                )
+            except Exception:
+                logger.error(f"DHL TransportInstruction {response.status_code}: {response.text[:300]}")
         response.raise_for_status()
         data = response.json()
 
@@ -233,14 +304,10 @@ class DHLClient(CarrierClient):
         )
 
     def get_all_documents(self, shipment_id: str) -> dict:
-        """Hämtar etikett + eventuella övriga dokument separat.
+        """Hämtar etikett + fraktlista i ETT API-anrop (per DHL:s rekommendation).
 
-        Anropar Print API med olika options:
-        - {"label": True} → fraktetikett (alltid)
-        - {"shipmentList": True} → fraktlista/följesedel (om tillgängligt)
-
-        Args:
-            shipment_id: ID från create_shipment.
+        Använder printdocumentsbyid med shipmentIds + options (label, shipmentList).
+        Ett anrop istället för två — DHL rekommenderar denna metod.
 
         Returns:
             {
@@ -248,34 +315,39 @@ class DHLClient(CarrierClient):
                 "shipment_list": bytes | None  # Fraktlista (PDF) eller None
             }
         """
-        logger.info(f"DHL: Hämtar alla dokument för {shipment_id}")
+        logger.info(f"DHL: Hämtar alla dokument för {shipment_id} (ett anrop)")
 
-        ti_data = self._ti_cache.get(shipment_id)
-        if not ti_data:
+        url = f"{self.base_url}{API_PATHS['print_by_id']}"
+        payload = {
+            "shipmentIds": [str(shipment_id)],
+            "options": {
+                "label": True,
+                "shipmentList": True,
+                "waybill": True,
+                "guarantee": True,
+                "returnLabel": True,
+                "licensePlateBarCode": "GS1",
+                "pageOptions": {
+                    "pageType": "Label",
+                    "marginLeft": 0,
+                    "marginTop": 0,
+                    "padding": 0,
+                },
+            },
+        }
+
+        response = self.session.post(url, json=payload, timeout=self.timeout)
+        response.raise_for_status()
+
+        label, shipment_list = self._extract_label_and_shipment_list(response)
+        if not label:
             raise RuntimeError(
-                f"DHL: Ingen cachad TI-data för {shipment_id}. "
-                f"Anropa create_shipment() först."
+                f"DHL printdocumentsbyid: Ingen etikett i svaret för {shipment_id}"
             )
-
-        # 1. Etikett (obligatorisk)
-        label = self._print_documents(ti_data)
-
-        # 2. Fraktlista (valfri — alla produkter har inte det)
-        shipment_list = None
-        try:
-            url = f"{self.base_url}{API_PATHS['print_documents']}"
-            payload = {
-                "shipment": ti_data,
-                "options": {"shipmentList": True},
-            }
-            response = self.session.post(url, json=payload, timeout=self.timeout)
-            response.raise_for_status()
-            shipment_list = self._extract_document_from_response(
-                response, "ShipmentList"
-            )
-            logger.info(f"DHL: Fraktlista hämtad ({len(shipment_list)} bytes)")
-        except Exception as e:
-            logger.debug(f"DHL: Ingen fraktlista tillgänglig: {e}")
+        if shipment_list:
+            logger.info(f"DHL: Etikett + fraktlista hämtad ({len(label)} + {len(shipment_list)} bytes)")
+        else:
+            logger.info(f"DHL: Etikett hämtad ({len(label)} bytes)")
 
         return {
             "label": label,
@@ -394,6 +466,38 @@ class DHLClient(CarrierClient):
         )
         return response.content
 
+    def _extract_label_and_shipment_list(
+        self, response: requests.Response
+    ) -> tuple[bytes | None, bytes | None]:
+        """Extraherar Label och ShipmentList från printdocumentsbyid-svar.
+
+        Returns:
+            (label_bytes, shipment_list_bytes) — shipment_list kan vara None.
+        """
+        import base64
+
+        content_type = response.headers.get("Content-Type", "")
+        if "json" not in content_type:
+            return None, None
+
+        data = response.json()
+        reports = data.get("reports", [])
+        label = None
+        shipment_list = None
+
+        for report in reports:
+            t = report.get("type")
+            content_b64 = report.get("content", "")
+            if not content_b64:
+                continue
+            decoded = base64.b64decode(content_b64)
+            if t == "Label":
+                label = decoded
+            elif t == "ShipmentList":
+                shipment_list = decoded
+
+        return label, shipment_list
+
     def _extract_document_from_response(self, response: requests.Response,
                                          doc_type: str) -> Optional[bytes]:
         """Extraherar ett specifikt dokument (type) från Print API-svar.
@@ -424,6 +528,200 @@ class DHLClient(CarrierClient):
 
         # Om vi inte hittade specifik typ, returnera None
         return None
+
+    # ------------------------------------------------------------------
+    # PriceQuote API
+    # ------------------------------------------------------------------
+
+    def _build_price_quote_shipment(
+        self,
+        shipment: Shipment,
+        additional_services: Optional[dict] = None,
+        stackable: bool = True,
+        loading_meters_override: Optional[float] = None,
+    ) -> dict:
+        """Bygger ShipmentModel enligt PriceQuote Swagger-schema."""
+        recv = shipment.receiver
+        if not recv:
+            raise ValueError("Shipment saknar receiver")
+        container = shipment.containers[0] if shipment.containers else None
+        product_code = shipment.service.product_code
+
+        weight = container.weight if container else 1.0
+        volume = container.volume if container else 0.001
+        copies = container.copies if container else 1
+        pkg_type = container.package_code if container else "PKT"
+
+        recv_country = (recv.country or "SE").upper()
+        use_domestic = recv_country in self._domestic_countries
+        consignor_id = (
+            self.customer_number
+            if use_domestic
+            else self.customer_number_international
+        )
+        # Utrikes kräver ofta DDP; inrikes använder 1
+        payer = (
+            PAYER_CODE_BY_PRODUCT.get(product_code)
+            or ("DDP" if recv_country != "SE" else "1")
+        )
+
+        dhl_product = DHL_PRODUCT_CODE_FOR_QUOTE.get(
+            product_code, f"DHL_{product_code}"
+        )
+
+        # Pallet-fält för 210/202
+        n_half = 1 if pkg_type == "702" else 0
+        n_full = copies if pkg_type == "701" else 0
+        if product_code not in ("210", "202", "205", "SPI", "PPI"):
+            n_half = n_full = 0
+        pallet_places = n_full + 0.5 * n_half if (n_full or n_half) else 0
+        # loadingMeters: override eller halvpall ~0.4, fullpall ~0.8
+        if loading_meters_override is not None:
+            loading_meters = loading_meters_override
+        else:
+            loading_meters = n_full * 0.8 + n_half * 0.4 if (n_full or n_half) else 0
+
+        shipment_model = {
+            "dhlProductCode": dhl_product,
+            "totalNumberOfPieces": copies,
+            "totalWeight": weight,
+            "totalVolume": volume,
+            "totalLoadingMeters": loading_meters,
+            "totalPalletPlaces": pallet_places,
+            "numberOfEURPallets": 0,
+            "numberOfFullPallets": n_full,
+            "numberOfHalfPallets": n_half,
+            "goodsValue": "",
+            "payerCode": payer,
+            "importExport": "E" if recv_country != "SE" else "I",
+            "piece": [
+                {
+                    "numberOfPieces": copies,
+                    "weight": weight,
+                    "volume": volume,
+                    "loadingMeters": loading_meters,
+                    "palletPlaces": pallet_places,
+                    "width": container.width if container else 0,
+                    "height": container.height if container else 0,
+                    "length": container.length if container else 0,
+                    "stackable": stackable,
+                    "packageType": pkg_type,
+                }
+            ],
+            "parties": [
+                {
+                    "id": consignor_id,
+                    "name": format_sender_name(self.sender.get("name", "")),
+                    "type": "Consignor",
+                    "address": {
+                        "street": self.sender.get("address1", ""),
+                        "streetNumber": "",
+                        "cityName": self.sender.get("city", ""),
+                        "postalCode": clean_postal_code(
+                            self.sender.get("zipcode", "")
+                        ),
+                        "countryCode": self.sender.get("country", "SE"),
+                    },
+                },
+                {
+                    "id": "",
+                    "name": recv.name,
+                    "type": "Consignee",
+                    "address": {
+                        "street": recv.address1,
+                        "streetNumber": "",
+                        "cityName": recv.city,
+                        "postalCode": clean_postal_code(recv.zipcode),
+                        "countryCode": recv.country or "SE",
+                    },
+                },
+            ],
+            "additionalServices": additional_services or {},
+        }
+        if product_code in PRODUCTS_REQUIRING_ACCESSPOINT and recv.zipcode:
+            points = self.find_service_points(
+                clean_postal_code(recv.zipcode),
+                recv.country or "SE",
+                street=recv.address1,
+                city=recv.city,
+                max_results=1,
+            )
+            if points:
+                shipment_model["parties"].append(
+                    self._service_point_to_access_point(points[0])
+                )
+        return shipment_model
+
+    def get_price_quote(
+        self,
+        shipment: Shipment,
+        use_gross: bool = True,
+        eid: Optional[dict] = None,
+        additional_services: Optional[dict] = None,
+        stackable: bool = True,
+        loading_meters: Optional[float] = None,
+    ) -> dict:
+        """Hämtar prisuppskattning via PriceQuote API.
+
+        Endpoints:
+        - quoteforgrossprice: listpris
+        - quoteforprice: avtalspris (kräver ofta eID)
+
+        Args:
+            shipment: Sändning att kalkylera pris för.
+            use_gross: True = quoteforgrossprice, False = quoteforprice.
+            eid: Valfritt {"userName": "...", "password": "..."} för avtalspris.
+            additional_services: Extra tjänster för additionalServices.
+            stackable: False för ej stapelbar (halvpall).
+
+        Returns:
+            Dict med priceQuoteResult (lista: FreightCost, TotalPrice, etc.)
+        """
+        shipment_model = self._build_price_quote_shipment(
+            shipment, additional_services, stackable, loading_meters
+        )
+
+        path_key = "price_quote_gross" if use_gross else "price_quote"
+        url = f"{self.base_url}{API_PATHS[path_key]}"
+
+        body = {
+            "shipment": shipment_model,
+            "ownSurCharge": {"percentage": 0, "value": 0},
+        }
+        eid_to_use = eid or (self._eid if not use_gross else None)
+        if eid_to_use:
+            body["eid"] = eid_to_use
+
+        logger.info(
+            f"DHL: Prisförfrågan för produkt {shipment.service.product_code} "
+            f"till {shipment.receiver.country}"
+        )
+        response = self.session.post(url, json=body, timeout=self.timeout)
+
+        if response.status_code >= 400:
+            err = {}
+            try:
+                err = response.json()
+            except Exception:
+                pass
+            logger.error(
+                f"DHL PriceQuote {response.status_code}: {err.get('UserMessage', err.get('Message', response.text))}"
+            )
+        response.raise_for_status()
+        data = response.json()
+
+        result = data
+        if isinstance(data, dict):
+            result = data.get("priceQuoteResult", data.get("result", data))
+        if isinstance(result, list):
+            total = next(
+                (r for r in result if r.get("id") == "TotalPrice"),
+                {},
+            )
+            logger.info(
+                f"DHL: Prisberäknad — {total.get('value', '?')} {total.get('unit', '')}"
+            )
+        return {"priceQuoteResult": result, "raw": data}
 
     # ------------------------------------------------------------------
     # ServicePointLocator API
@@ -459,6 +757,87 @@ class DHLClient(CarrierClient):
 
         logger.info(f"DHL: Hittade {len(points)} ombud")
         return points
+
+    # ------------------------------------------------------------------
+    # TimeTable API — estimerat leveransdatum
+    # ------------------------------------------------------------------
+
+    def get_estimated_delivery_date(self, shipment: Shipment) -> Optional[str]:
+        """Hämtar estimerat leveransdatum via TimeTable API.
+
+        POST /timetableapi/v1/timetable/gettimetable
+        Returnerar deliveryDateString för matchande produkt, t.ex. "2026-02-28".
+
+        Returns:
+            Leveransdatum som str (YYYY-MM-DD) eller None om API-anrop misslyckas.
+        """
+        recv = shipment.receiver
+        if not recv:
+            return None
+        product_code = (shipment.service.product_code or "").strip()
+        if not product_code:
+            return None
+
+        sender_zip = clean_postal_code(self.sender.get("zipcode", ""))
+        recv_zip = clean_postal_code(recv.zipcode)
+        sender_country = (self.sender.get("country") or "SE").upper()
+        recv_country = (recv.country or "SE").upper()
+
+        # dateTime: upphämtningsdatum + tid (ISO 8601)
+        shipping_date = date.today()
+        if shipment.service.booking and shipment.service.booking.pickup_date:
+            try:
+                shipping_date = datetime.strptime(
+                    shipment.service.booking.pickup_date, "%Y-%m-%d"
+                ).date()
+            except ValueError:
+                pass
+        dt = datetime(
+            shipping_date.year,
+            shipping_date.month,
+            shipping_date.day,
+            8,
+            0,
+            0,
+            tzinfo=timezone.utc,
+        )
+        date_time_iso = dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+        body = {
+            "cityName": self.sender.get("city", ""),
+            "postalCode": sender_zip,
+            "countryCode": sender_country,
+            "street": self.sender.get("address1", ""),
+            "streetNumber": "",
+            "deliveryCityName": recv.city or "",
+            "deliveryPostalCode": recv_zip,
+            "deliveryCountryCode": recv_country,
+            "deliveryStreet": recv.address1 or "",
+            "deliveryStreetNumber": "",
+            "earliestSent": True,
+            "dateTime": date_time_iso,
+        }
+
+        url = f"{self.base_url}{API_PATHS['timetable']}"
+        params = {"productcode": product_code}
+
+        try:
+            response = self.session.post(
+                url, json=body, params=params, timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+        except Exception as e:
+            logger.warning(f"DHL TimeTable: Kunde inte hämta leveransdatum: {e}")
+            return None
+
+        if isinstance(data, list) and data:
+            item = data[0]
+            delivery_str = item.get("deliveryDateString") or item.get("deliveryDate")
+            if delivery_str:
+                logger.info(f"DHL: Estimerat leveransdatum: {delivery_str}")
+                return str(delivery_str)
+        return None
 
     # ------------------------------------------------------------------
     # PickupRequest API
@@ -609,12 +988,21 @@ class DHLClient(CarrierClient):
                     f"nära {recv_zip}. Produkt {product_code} kräver ServicePoint."
                 )
 
+        # Consignor id: domestic_countries använder 101733, övriga 20193498.SE0001
+        recv_country = (recv.country or "SE").upper()
+        use_domestic = recv_country in self._domestic_countries
+        consignor_id = (
+            self.customer_number
+            if use_domestic
+            else self.customer_number_international
+        )
+
         # Parties — address MÅSTE vara nested objekt
         parties = [
             {
-                "id": self.customer_number,
+                "id": consignor_id,
                 "type": "Consignor",
-                "name": self.sender.get("name", ""),
+                "name": format_sender_name(self.sender.get("name", "")),
                 "references": [shipment.reference] if shipment.reference else [],
                 "address": {
                     "street": self.sender.get("address1", ""),
@@ -633,7 +1021,7 @@ class DHLClient(CarrierClient):
                     "street": recv.address1,
                     "cityName": recv.city,
                     "postalCode": recv_zip,
-                    "countryCode": recv.country,
+                    "countryCode": recv.country or "SE",
                 },
                 "phone": recv.phone,
                 "email": recv.email,
@@ -643,10 +1031,10 @@ class DHLClient(CarrierClient):
             parties.append(access_point)
 
         # Pakettyp — standardmappning per produktkod
-        if container and container.package_code:
-            pkg_type = container.package_code
-        else:
-            pkg_type = PACKAGE_TYPE_DEFAULTS.get(product_code, "PKT")
+        raw_pkg = (container.package_code if container else "") or ""
+        pkg_type = PACKAGE_CODE_NORMALIZE.get(raw_pkg, raw_pkg) or PACKAGE_TYPE_DEFAULTS.get(
+            product_code, "PKT"
+        )
 
         # Pieces — id måste vara string array
         pieces = [{
@@ -684,7 +1072,7 @@ class DHLClient(CarrierClient):
             "totalWeight": weight,
             "totalVolume": volume,
             "payerCode": {
-                "code": "1",  # 1 = Consignor betalar
+                "code": PAYER_CODE_BY_PRODUCT.get(product_code, "1"),
                 "location": "",
             },
             "parties": parties,

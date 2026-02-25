@@ -31,7 +31,9 @@ Thumbs.db
 
 # Etiketter (lokala testfiler)
 *.pdf
+test_labels/
 *.zpl
+test_data/
 
 # Virtualenv
 venv/
