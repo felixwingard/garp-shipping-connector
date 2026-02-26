@@ -141,22 +141,28 @@ class LabelPrinter:
             win32print.ClosePrinter(hprinter)
 
     def _find_sumatra(self) -> str:
-        """Hittar SumatraPDF.exe — config, projektmapp, cwd eller PATH."""
+        """Hittar SumatraPDF.exe — config, projektmapp, subfoldrar (SumatraPDF-*), cwd eller PATH."""
         import os
         # 1. Explicit sökväg i config (t.ex. C:\GARP-Shipping\...\SumatraPDF.exe)
         if self._sumatra_exe:
             p = Path(self._sumatra_exe)
             if p.is_file():
                 return str(p)
-        # 2. Projektmapp (mapp med src/ — en nivå upp från src/printing/)
         candidates = []
         try:
             proj = Path(__file__).resolve().parent.parent.parent
             candidates.append(proj / "SumatraPDF.exe")
+            # ZIP extraheras ofta till SumatraPDF-3.5.2-64\ etc.
+            for sub in proj.glob("SumatraPDF-*/SumatraPDF.exe"):
+                candidates.append(sub)
         except Exception:
             pass
         cwd = Path(os.getcwd())
-        candidates.extend([cwd / "SumatraPDF.exe", Path("SumatraPDF.exe")])
+        candidates.extend([
+            cwd / "SumatraPDF.exe",
+            cwd / "SumatraPDF-3.5.2-64" / "SumatraPDF.exe",
+            Path("SumatraPDF.exe"),
+        ])
         for p in candidates:
             if isinstance(p, Path) and p.is_file():
                 return str(p)
