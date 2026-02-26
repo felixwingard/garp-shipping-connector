@@ -141,31 +141,45 @@ class LabelPrinter:
             win32print.ClosePrinter(hprinter)
 
     def _find_sumatra(self) -> str:
-        """Hittar SumatraPDF.exe — config, projektmapp, subfoldrar (SumatraPDF-*), cwd eller PATH."""
+        """Hittar SumatraPDF.exe — config, projektmapp, subfoldrar, cwd, rekursiv sökning."""
         import os
-        # 1. Explicit sökväg i config (t.ex. C:\GARP-Shipping\...\SumatraPDF.exe)
+        # 1. Explicit sökväg i config
         if self._sumatra_exe:
             p = Path(self._sumatra_exe)
             if p.is_file():
                 return str(p)
-        candidates = []
+        search_roots = []
         try:
             proj = Path(__file__).resolve().parent.parent.parent
-            candidates.append(proj / "SumatraPDF.exe")
-            # ZIP extraheras ofta till SumatraPDF-3.5.2-64\ etc.
-            for sub in proj.glob("SumatraPDF-*/SumatraPDF.exe"):
-                candidates.append(sub)
+            search_roots.append(proj)
         except Exception:
             pass
         cwd = Path(os.getcwd())
-        candidates.extend([
-            cwd / "SumatraPDF.exe",
-            cwd / "SumatraPDF-3.5.2-64" / "SumatraPDF.exe",
-            Path("SumatraPDF.exe"),
-        ])
-        for p in candidates:
-            if isinstance(p, Path) and p.is_file():
-                return str(p)
+        if cwd not in search_roots:
+            search_roots.append(cwd)
+        for root in search_roots:
+            # Direkt i root
+            direct = root / "SumatraPDF.exe"
+            if direct.is_file():
+                return str(direct)
+            # Vanliga unpack-mappar
+            for subname in ("SumatraPDF-3.5.2-64", "SumatraPDF-3.5.2", "SumatraPDF-*"):
+                if "*" in subname:
+                    for sub in root.glob(subname):
+                        if sub.is_dir():
+                            exe = sub / "SumatraPDF.exe"
+                            if exe.is_file():
+                                return str(exe)
+                else:
+                    exe = root / subname / "SumatraPDF.exe"
+                    if exe.is_file():
+                        return str(exe)
+            # Rekursiv sökning (max 2 nivåer ned)
+            for sub in root.iterdir():
+                if sub.is_dir() and "SumatraPDF" in sub.name:
+                    exe = sub / "SumatraPDF.exe"
+                    if exe.is_file():
+                        return str(exe)
         return "SumatraPDF.exe"  # Fallback till PATH
 
     def _print_pdf_windows(self, printer_name: str, pdf_data: bytes,
