@@ -172,6 +172,9 @@ class LabelPrinter:
             temp_path = f.name
 
         sumatra = self._find_sumatra()
+        logger.info(
+            f"Utskrift: sumatra={sumatra!r} skrivare={printer_name!r}"
+        )
         if sumatra == "SumatraPDF.exe":
             logger.warning(
                 "SumatraPDF.exe hittades inte. Ladda ner från "
@@ -183,12 +186,15 @@ class LabelPrinter:
                     sumatra,
                     "-print-to", printer_name,
                     "-silent",
+                    "-exit-when-done",
                     "-print-settings", "noscale",
                     temp_path,
                 ],
                 timeout=30,
                 capture_output=True,
             )
+            Path(temp_path).unlink(missing_ok=True)
+
             if result.returncode == 0:
                 logger.info(
                     f"PDF-{doc_type} utskriven på '{printer_name}' "
@@ -196,17 +202,22 @@ class LabelPrinter:
                 )
                 return True
 
-            # Fallback: Windows system-utskrift
-            import win32api
-            win32api.ShellExecute(0, "print", temp_path, None, ".", 0)
-            logger.info(
-                f"PDF-{doc_type} skickad till '{printer_name}' "
-                f"för order {order_no} (fallback)"
+            stderr_str = (result.stderr or b"").decode("utf-8", errors="replace")[:300]
+            logger.warning(
+                f"SumatraPDF returnerade {result.returncode}. stderr: {stderr_str}"
             )
-            return True
+            return False
 
-        finally:
+        except FileNotFoundError:
             Path(temp_path).unlink(missing_ok=True)
+            logger.error(
+                f"SumatraPDF kunde inte köras (filen hittades inte). "
+                f"Sökväg: {sumatra}"
+            )
+            raise
+        except Exception as e:
+            Path(temp_path).unlink(missing_ok=True)
+            raise
 
     def _save_to_file(self, data: bytes, fmt: str, order_no: str,
                       doc_type: str) -> bool:
