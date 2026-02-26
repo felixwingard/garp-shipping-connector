@@ -190,12 +190,13 @@ class SettingsWindow(tk.Toplevel):
         if doc_printer == "(ingen)":
             doc_printer = ""
 
-        self.config["printers"] = {
-            "label_printer_name": self.label_printer_var.get(),
-            "label_format": self.label_format_var.get(),
-            "document_printer_name": doc_printer,
-            "document_format": "pdf",
-        }
+        # Uppdatera endast fälten som UI redigerar — bevara print_document_for_products, sumatra_exe m.fl.
+        if "printers" not in self.config:
+            self.config["printers"] = {}
+        self.config["printers"]["label_printer_name"] = self.label_printer_var.get()
+        self.config["printers"]["label_format"] = self.label_format_var.get()
+        self.config["printers"]["document_printer_name"] = doc_printer
+        self.config["printers"]["document_format"] = "pdf"
         self.config.pop("printer", None)
 
         self.config["paths"]["watch_dir"] = self.watch_dir_var.get()
