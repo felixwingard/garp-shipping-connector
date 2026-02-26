@@ -4,7 +4,7 @@
 # skip_email: true   # Sätt för att hoppa över kundmail (t.ex. vid test)
 # Mappar
 paths:
-  watch_dir: "C:\\GARP\\Unifaun\\Outgoing"    # GARP droppar XML här
+  watch_dir: "C:\\GARP\\Unifaun\\Outgoing"    # GARP droppar XML här (.xml eller .txt)
   done_dir: "C:\\GARP\\Unifaun\\Done"          # Klara filer flyttas hit
   error_dir: "C:\\GARP\\Unifaun\\Error"        # Felfiler hamnar här
   log_dir: "C:\\GARP\\Logs"                    # Loggfiler

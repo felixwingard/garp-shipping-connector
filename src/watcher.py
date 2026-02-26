@@ -1,7 +1,7 @@
 """Mappbevakning — bevakar en mapp för nya XML-filer från GARP.
 
-Använder watchdog för filsystemhändelser + stabilitetskontroll
-(väntar tills filen slutat växa innan den bearbetas).
+GARP skriver filer med .txt-suffix (innehåll är XML). Accepterar både .xml och .txt.
+Använder watchdog för filsystemhändelser + stabilitetskontroll.
 """
 
 import time
@@ -12,9 +12,12 @@ from watchdog.events import FileSystemEventHandler
 
 logger = logging.getLogger(__name__)
 
+# GARP skriver .txt men innehållet är XML-format
+WATCH_EXTENSIONS = {".xml", ".txt"}
+
 
 class XMLFileHandler(FileSystemEventHandler):
-    """Reagerar på nya XML-filer i bevakad mapp."""
+    """Reagerar på nya XML-filer (.xml eller .txt) i bevakad mapp."""
 
     def __init__(self, orchestrator, stability_seconds: int = 2):
         self.orchestrator = orchestrator
@@ -26,7 +29,7 @@ class XMLFileHandler(FileSystemEventHandler):
             return
 
         filepath = Path(event.src_path)
-        if filepath.suffix.lower() != ".xml":
+        if filepath.suffix.lower() not in WATCH_EXTENSIONS:
             return
 
         if filepath.name in self._processing:
@@ -35,7 +38,7 @@ class XMLFileHandler(FileSystemEventHandler):
         self._processing.add(filepath.name)
         try:
             self._wait_for_stability(filepath)
-            logger.info(f"Ny XML-fil: {filepath.name}")
+            logger.info(f"Ny fil: {filepath.name}")
             self.orchestrator.process_file(filepath)
         except FileNotFoundError:
             logger.warning(f"Filen försvann innan bearbetning: {filepath.name}")
@@ -82,16 +85,19 @@ class FolderWatcher:
         logger.info("Mappbevakning stoppad")
 
     def process_existing_files(self):
-        """Bearbetar XML-filer som redan finns i mappen.
+        """Bearbetar XML-filer (.xml/.txt) som redan finns i mappen.
 
         Körs vid uppstart för att hantera filer som kommit
         medan tjänsten var nere.
         """
-        existing = sorted(self.watch_dir.glob("*.xml"))
+        existing = sorted(
+            p for p in self.watch_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in WATCH_EXTENSIONS
+        )
         if not existing:
             return
 
-        logger.info(f"Hittade {len(existing)} befintliga XML-filer vid uppstart")
+        logger.info(f"Hittade {len(existing)} befintliga filer vid uppstart")
         for filepath in existing:
             try:
                 self.orchestrator.process_file(filepath)

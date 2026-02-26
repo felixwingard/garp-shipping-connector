@@ -8,6 +8,7 @@ build/output/
 
 # Config med riktiga nycklar
 config/config.yaml
+pricequote_request.json
 
 # Miljövariabler
 .env
