@@ -52,7 +52,15 @@ if not exist "config\config.yaml" (
 )
 echo.
 
-echo  [4/4] Skapar genvag pa skrivbordet...
+echo  [4/5] Laddar ner SumatraPDF (for PDF-utskrift)...
+if not exist "SumatraPDF.exe" (
+    powershell -NoProfile -Command "try { Invoke-WebRequest -Uri 'https://www.sumatrapdfreader.org/dl/rel/3.5.2/SumatraPDF-3.5.2-64.zip' -OutFile 'SumatraPDF.zip' -UseBasicParsing; Expand-Archive -Path 'SumatraPDF.zip' -DestinationPath '.' -Force; $e = Get-ChildItem -Recurse -Filter 'SumatraPDF.exe' | Select-Object -First 1; if ($e) { Copy-Item $e.FullName -Destination 'SumatraPDF.exe' -Force }; Remove-Item 'SumatraPDF.zip' -Force -ErrorAction SilentlyContinue; Get-ChildItem -Filter 'SumatraPDF-*' -Directory | Remove-Item -Recurse -Force } catch { Write-Host 'SumatraPDF: Ladda ner manuellt fran sumatrapdfreader.org' }"
+) else (
+    echo         SumatraPDF finns redan.
+)
+echo.
+
+echo  [5/5] Skapar genvag pa skrivbordet...
 powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'GARP Shipping.lnk')); $Shortcut.TargetPath = '%PYTHONW%'; $Shortcut.Arguments = '-m src'; $Shortcut.WorkingDirectory = '%CD%'; $Shortcut.Description = 'GARP Shipping Connector'; $Shortcut.Save()"
 echo         Klart!
 echo.
@@ -71,7 +79,7 @@ echo.
 echo   Testa i konsollage (ser loggen):
 echo     python -m src --console
 echo.
-echo   Skrivare valjs via hogerklick pa tray-ikonen
+echo   Skrivare: Hogerklick pa tray-ikonen -> Installningar
 echo   (den grona cirkeln nere vid klockan)
 echo.
 pause

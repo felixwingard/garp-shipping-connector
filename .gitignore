@@ -9,6 +9,8 @@ build/output/
 # Config med riktiga nycklar
 config/config.yaml
 pricequote_request.json
+SumatraPDF.exe
+SumatraPDF.zip
 
 # Miljövariabler
 .env

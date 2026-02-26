@@ -139,6 +139,23 @@ class LabelPrinter:
         finally:
             win32print.ClosePrinter(hprinter)
 
+    def _find_sumatra(self) -> str:
+        """Hittar SumatraPDF.exe — projektmapp, cwd eller PATH."""
+        candidates = []
+        try:
+            # Projektmapp (mapp med src/ — en nivå upp från src/printing/)
+            proj = Path(__file__).resolve().parent.parent.parent
+            candidates.append(proj / "SumatraPDF.exe")
+        except Exception:
+            pass
+        import os
+        cwd = Path(os.getcwd())
+        candidates.extend([cwd / "SumatraPDF.exe", Path("SumatraPDF.exe")])
+        for p in candidates:
+            if isinstance(p, Path) and p.is_file():
+                return str(p)
+        return "SumatraPDF.exe"  # Fallback till PATH
+
     def _print_pdf_windows(self, printer_name: str, pdf_data: bytes,
                            order_no: str, doc_type: str) -> bool:
         """Skriver ut PDF via SumatraPDF (tyst utskrift)."""
@@ -148,10 +165,16 @@ class LabelPrinter:
             f.write(pdf_data)
             temp_path = f.name
 
+        sumatra = self._find_sumatra()
+        if sumatra == "SumatraPDF.exe":
+            logger.warning(
+                "SumatraPDF.exe hittades inte. Ladda ner från "
+                "https://www.sumatrapdfreader.org och lägg i projektmappen."
+            )
         try:
             result = subprocess.run(
                 [
-                    "SumatraPDF.exe",
+                    sumatra,
                     "-print-to", printer_name,
                     "-silent",
                     "-print-settings", "noscale",
