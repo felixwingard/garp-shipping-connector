@@ -61,6 +61,8 @@ printers:
   label_format: "pdf"                                # pdf eller zpl
   document_printer_name: ""                          # A4-skrivare (lämna tomt = ej utskrift)
   document_format: "pdf"
+  # SumatraPDF för PDF-utskrift. Sätt full sökväg om auto-hitta inte fungerar:
+  # sumatra_exe: "C:\\GARP-Shipping\\garp-shipping-connector-main\\SumatraPDF.exe"
 
 # SMTP (Loopia) — för kundmail med spårningslänk
 # Skapa adressen no-reply@ernstp.se i Loopia (eller använd befintlig).

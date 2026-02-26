@@ -5,7 +5,7 @@
 ## Steg 1: Packa upp ZIP-filen
 
 1. Öppna den nedladdade `garp-shipping-connector-main.zip`
-2. **Kopiera** den extraherade mappen till t.ex. `C:\GARP-Shipping` eller `C:\Users\<dittnamn>\garp-shipping-connector`
+2. **Extrahera** till t.ex. `C:\GARP-Shipping\` — du ska få mappen `C:\GARP-Shipping\garp-shipping-connector-main\`
 3. Öppna mappen — du ska se filer som `INSTALL.bat`, `config\`, `src\`, `scripts\` m.fl.
 
 ---
@@ -75,12 +75,15 @@ Om GARP använder en annan mapp (t.ex. via RDS/tsclient), justera `paths.watch_d
 
 ## Steg 6: SumatraPDF (för utskrift)
 
-Connectorn skriver ut PDF-etiketter via SumatraPDF. `INSTALL.bat` försöker ladda ner det automatiskt.
+Connectorn skriver ut PDF-etiketter via SumatraPDF. Lägg `SumatraPDF.exe` i projektmappen och sätt sökvägen i config.
 
-**Om inget skrivs ut:**
-1. Kontrollera att `SumatraPDF.exe` finns i projektmappen (samma mapp som INSTALL.bat)
-2. Ladda ner manuellt: https://www.sumatrapdfreader.org → 64-bit Portable → packa upp och lägg `SumatraPDF.exe` i projektmappen
-3. Kontrollera skrivarnamn: Högerklick på tray-ikonen → Inställningar → Etikettskrivare måste matcha **exakt** (t.ex. "ZDesigner ZD420-203dpi ZPL")
+1. Ladda ner: https://www.sumatrapdfreader.org → 64-bit Portable → packa upp
+2. Kopiera `SumatraPDF.exe` till `C:\GARP-Shipping\garp-shipping-connector-main\` (samma mapp som INSTALL.bat)
+3. Öppna `config\config.yaml` och lägg till under `printers:`:
+   ```yaml
+   sumatra_exe: "C:\\GARP-Shipping\\garp-shipping-connector-main\\SumatraPDF.exe"
+   ```
+   Då hittas SumatraPDF alltid oavsett var programmet startas från.
 
 ---
 
@@ -133,5 +136,5 @@ python scripts\test_label.py --send-email
 | "Python hittades inte" | Installera Python med "Add to PATH" |
 | "Modulen X hittades inte" | Kör `INSTALL.bat` igen |
 | Inget händer när fil droppas | Kolla att `watch_dir` pekar rätt. GARP skriver .txt — stöds nu. |
-| Etikett skrivs inte ut | 1) Lägg SumatraPDF.exe i projektmappen (sumatrapdfreader.org). 2) Högerklick tray → Inställningar → välj rätt Zebra (namnet måste matcha exakt). |
+| Etikett skrivs inte ut | 1) Lägg SumatraPDF.exe i C:\GARP-Shipping\garp-shipping-connector-main\ och sätt sumatra_exe i config (se Steg 6). 2) Högerklick tray → Inställningar → välj rätt Zebra (namnet måste matcha exakt). |
 | Mail skickas inte | Kontrollera smtp.username, smtp.password i config |
