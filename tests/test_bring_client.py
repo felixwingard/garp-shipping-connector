@@ -117,6 +117,31 @@ class TestBuildBookingPayload:
         payload = client._build_booking_payload(shipment, "PICKUP_PARCEL_BULK")
         assert payload["consignments"][0]["references"]["consolidatedShipmentId"] == "CS12345678NO"
 
+    def test_lq_adds_additional_service_0003(self, bring_client):
+        """LQ i addon lägger till additionalService 0003 (begränsad mängd)."""
+        shipment = Shipment(
+            order_no="ORD-LQ",
+            receiver=Receiver(name="K", address1="A", zipcode="0150", city="Oslo", country="NO"),
+            service=ServiceInfo(carrier=CarrierType.BRING, product_code="0332", addon="LQ"),
+        )
+        payload = bring_client._build_booking_payload(shipment, "BUSINESS_PARCEL_BULK")
+        ids = [s["id"] for s in payload["consignments"][0]["product"]["additionalServices"]]
+        assert "0003" in ids
+
+    def test_bulk_id_and_lq_combined(self, bring_client):
+        """Addon kan kombinera bulk-ID och LQ: BRING:0332:CS123:LQ."""
+        config_no_bulk = {**BRING_CONFIG, "consolidated_shipment_id": ""}
+        client = BringClient(config_no_bulk, SENDER)
+        shipment = Shipment(
+            order_no="ORD-C",
+            receiver=Receiver(name="K", address1="A", zipcode="0150", city="Oslo", country="NO"),
+            service=ServiceInfo(carrier=CarrierType.BRING, product_code="0332", addon="CS12345678NO:LQ"),
+        )
+        payload = client._build_booking_payload(shipment, "BUSINESS_PARCEL_BULK")
+        assert payload["consignments"][0]["references"]["consolidatedShipmentId"] == "CS12345678NO"
+        ids = [s["id"] for s in payload["consignments"][0]["product"]["additionalServices"]]
+        assert "0003" in ids
+
 
 class TestCreateShipment:
     """Tester för create_shipment (mockar API)."""

@@ -46,6 +46,31 @@ def _deep_merge_defaults(defaults: dict, user: dict) -> dict:
     return result
 
 
+def save_config(config: dict) -> None:
+    """Sparar config till config.yaml (överskriver filen)."""
+    path = get_config_path()
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+
+
+def increment_bring_bulk_count(config: dict, delta: int) -> int:
+    """Ökar bring.bulk_parcel_count med delta, sparar till config.yaml, returnerar nytt värde."""
+    path = get_config_path()
+    with open(path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    bring = cfg.get("bring") or {}
+    current = int(bring.get("bulk_parcel_count", 0))
+    new_val = max(0, current + delta)
+    bring["bulk_parcel_count"] = new_val
+    cfg["bring"] = bring
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    if "bring" not in config:
+        config["bring"] = {}
+    config["bring"]["bulk_parcel_count"] = new_val
+    return new_val
+
+
 def load_config() -> dict:
     """Laddar config.yaml med miljövariabelersättning.
     Nya nycklar från config.example.yaml mergas in automatiskt — slipper manuell kopiering vid git pull.

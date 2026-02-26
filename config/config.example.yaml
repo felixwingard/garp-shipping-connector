@@ -37,6 +37,7 @@ dhl:
   api_key: "ER_PRODUKTIONSNYCKEL"      # Er DHL client-key (GUID) från DHL
   eid_username: "${DHL_EID_USERNAME}"  # För PriceQuote avtalspris — begär från DHL
   eid_password: "${DHL_EID_PASSWORD}"
+  # fetch_price_after_shipment: true   # Hämta uppskattat pris efter varje DHL-sändning (avtalspris)
   timeout_seconds: 30
   retry_attempts: 3
   retry_delay_seconds: 5
@@ -48,6 +49,7 @@ dhl:
 #   api_key: "${BRING_API_KEY}"
 #   customer_number: "XXXXXX"
 #   consolidated_shipment_id: ""         # Bulk-ID från Mybring (när pall skapats). Uppdatera per batch.
+#   social_control: true                 # Tilläggstjänst 1082 vid Pickup Parcel (0340/0342) — rekommenderas vid test
 #   test_mode: true
 #   timeout_seconds: 30
 
@@ -127,5 +129,7 @@ logging:
 #
 # För 0342/0332: Skapa pall i Mybring, kopiera bulk-ID, sätt i config
 # eller i srvid: BRING:0342:CS059102945NO (addon = bulk-ID)
+#
+# Begränsad mängd (LQ): BRING:0332:LQ eller BRING:0332:CS123:LQ (bulk+LQ)
 # API: https://developer.bring.com/api/booking/
 # =============================================================

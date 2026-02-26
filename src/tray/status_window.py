@@ -71,7 +71,7 @@ class StatusWindow(tk.Toplevel):
         card.pack(fill="both", expand=True)
 
         # Treeview
-        columns = ("time", "order", "tracking", "carrier", "status")
+        columns = ("time", "order", "tracking", "carrier", "price", "status")
         self.tree = ttk.Treeview(
             card,
             columns=columns,
@@ -83,12 +83,14 @@ class StatusWindow(tk.Toplevel):
         self.tree.heading("order", text="Order")
         self.tree.heading("tracking", text="Spårningsnr")
         self.tree.heading("carrier", text="Transportör")
+        self.tree.heading("price", text="Pris")
         self.tree.heading("status", text="Status")
 
         self.tree.column("time", width=65, minwidth=50)
         self.tree.column("order", width=130, minwidth=90)
         self.tree.column("tracking", width=180, minwidth=120)
         self.tree.column("carrier", width=75, minwidth=60)
+        self.tree.column("price", width=70, minwidth=50)
         self.tree.column("status", width=70, minwidth=50)
 
         scrollbar = ttk.Scrollbar(card, orient="vertical", command=self.tree.yview)
@@ -123,20 +125,21 @@ class StatusWindow(tk.Toplevel):
                     entry.get("order_no", ""),
                     entry.get("tracking", ""),
                     entry.get("carrier", ""),
+                    entry.get("estimated_price", ""),
                     "OK",
                 )
                 tag = "ok"
             elif event == "shipment_error":
-                values = (time_str, entry.get("order_no", ""), "", "", "Fel")
+                values = (time_str, entry.get("order_no", ""), "", "", "", "Fel")
                 tag = "error"
             elif event == "file_done":
-                values = (time_str, entry.get("filename", ""), "", "", "Klar")
+                values = (time_str, entry.get("filename", ""), "", "", "", "Klar")
                 tag = "info"
             elif event == "file_error":
-                values = (time_str, entry.get("filename", ""), "", "", "Fel")
+                values = (time_str, entry.get("filename", ""), "", "", "", "Fel")
                 tag = "error"
             else:
-                values = (time_str, str(entry), "", "", "")
+                values = (time_str, str(entry), "", "", "", "")
                 tag = "info"
 
             self.tree.insert("", "end", values=values, tags=(tag,))

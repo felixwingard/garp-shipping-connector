@@ -207,6 +207,29 @@ class TestParseSrvid:
         with pytest.raises(ValueError, match="DHL:103 istället för ASPO"):
             parser._parse_srvid("ASPO")
 
+    def test_container_dimensions(self, parser):
+        """Container length, width, height parsas från XML; volume beräknas om saknas."""
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<data>
+ <receiver rcvid="X"><val n="name">K</val><val n="address1">A</val><val n="zipcode">5220</val><val n="city">Odense</val><val n="country">DK</val></receiver>
+ <shipment orderno="T1">
+  <val n="from">X</val><val n="reference">T1</val>
+  <service srvid="DHL:112"/>
+  <container type="parcel">
+   <val n="copies">1</val><val n="weight">15</val>
+   <val n="length">46</val><val n="width">36</val><val n="height">30</val>
+  </container>
+ </shipment>
+</data>"""
+        shipments = parser.parse_string(xml)
+        c = shipments[0].containers[0]
+        assert c.length == 46
+        assert c.width == 36
+        assert c.height == 30
+        assert c.weight == 15
+        # Volume beräknas: 46*36*30 / 1e6 = 0.04968
+        assert 0.049 < c.volume < 0.050
+
     def test_mojibake_fix(self, parser):
         """UTF-8 felaktigt tolkat som Latin-1 repareras (Ã¤ → ä)."""
         assert parser._fix_mojibake("Ã¤r") == "är"

@@ -51,6 +51,7 @@ class TrayApp:
         # Fönster-instanser (skapas vid behov)
         self._settings_window = None
         self._status_window = None
+        self._bring_bulk_window = None
 
         # Shipment-historik för statusfönstret
         self.shipment_history: list[dict] = []
@@ -156,6 +157,8 @@ class TrayApp:
             self._show_settings()
         elif action == "show_status":
             self._show_status()
+        elif action == "show_bring_bulk":
+            self._show_bring_bulk()
         elif action == "quit":
             self.quit()
         elif action == "shipment_event":
@@ -199,6 +202,10 @@ class TrayApp:
             pystray.MenuItem(
                 "Inställningar",
                 lambda icon, item: self._queue.put({"action": "show_settings"}),
+            ),
+            pystray.MenuItem(
+                "Bring Bulk (Norge)",
+                lambda icon, item: self._queue.put({"action": "show_bring_bulk"}),
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
@@ -334,6 +341,29 @@ class TrayApp:
             self.config,
             on_save=self._on_settings_saved,
         )
+
+    def _show_bring_bulk(self):
+        """Visar Bring Bulk-fönstret (reservera nummer, slutför pall)."""
+        if self._bring_bulk_window and self._bring_bulk_window.winfo_exists():
+            self._bring_bulk_window.lift()
+            self._bring_bulk_window.focus_force()
+            return
+
+        from .bring_bulk_window import BringBulkWindow
+        self._bring_bulk_window = BringBulkWindow(
+            self.root,
+            self.config,
+            on_bulk_id_reserved=self._on_bulk_id_reserved,
+        )
+
+    def _on_bulk_id_reserved(self, new_config: dict):
+        """Callback när nytt bulk-ID reserverats."""
+        self.config = new_config
+        if self.orchestrator and self.orchestrator.bring:
+            self.orchestrator.bring._consolidated_shipment_id = (
+                new_config.get("bring", {}).get("consolidated_shipment_id", "")
+            )
+        logger.info("Bulk-ID uppdaterat — nya paket använder det")
 
     def _show_status(self):
         """Visar statusfönstret."""

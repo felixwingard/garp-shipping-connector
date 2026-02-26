@@ -181,6 +181,13 @@ class GarpXMLParser:
 
     def _parse_container(self, elem: ET.Element) -> Container:
         vals = self._extract_vals(elem)
+        length = float(vals.get("length", "0"))
+        width = float(vals.get("width", "0"))
+        height = float(vals.get("height", "0"))
+        volume = float(vals.get("volume", "0"))
+        # Beräkna volym från mått om volume saknas men längd/bredd/höjd finns
+        if volume <= 0 and length > 0 and width > 0 and height > 0:
+            volume = (length * width * height) / 1_000_000  # cm³ → m³
         return Container(
             container_type=elem.get("type", "parcel"),
             measure=elem.get("measure", ""),
@@ -188,7 +195,10 @@ class GarpXMLParser:
             package_code=vals.get("packagecode", "PC"),
             contents=vals.get("contents", ""),
             weight=float(vals.get("weight", "0")),
-            volume=float(vals.get("volume", "0")),
+            volume=volume,
+            length=length,
+            width=width,
+            height=height,
         )
 
     def _parse_notifications(self, elem: Optional[ET.Element]) -> list[Notification]:

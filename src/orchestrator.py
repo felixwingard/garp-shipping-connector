@@ -190,6 +190,16 @@ class ShipmentOrchestrator:
             label_data = result["label_data"]
             shipment_list = None
 
+            # Räkna kolli för bulk (0332/0342) — lägg till vid lyckad bokning
+            prod = shipment.service.product_code.upper() if shipment.service else ""
+            if prod in ("0332", "0342", "BUSINESS_PARCEL_BULK", "PICKUP_PARCEL_BULK"):
+                kolli = sum(c.copies for c in shipment.containers) if shipment.containers else 1
+                try:
+                    from .utils.config import increment_bring_bulk_count
+                    increment_bring_bulk_count(self.config, kolli)
+                except Exception as e:
+                    logger.warning(f"Kunde inte uppdatera bulk kolli-räknare: {e}")
+
         else:
             raise ValueError(
                 f"Transportör '{carrier.value}' stöds inte ännu. "
@@ -227,6 +237,7 @@ class ShipmentOrchestrator:
 
         # 5. Estimerat leveransdatum (DHL TimeTable API)
         estimated_delivery = ""
+        estimated_price = ""
         if carrier == CarrierType.DHL:
             try:
                 estimated_delivery = (
@@ -234,6 +245,21 @@ class ShipmentOrchestrator:
                 )
             except Exception as e:
                 logger.debug(f"  Kunde inte hämta leveransdatum: {e}")
+
+            # 5b. Uppskattat pris via PriceQuote (avtalspris för DK utrikes etc.)
+            if self.config.get("dhl", {}).get("fetch_price_after_shipment", True):
+                try:
+                    quote = self.dhl.get_price_quote(shipment, use_gross=False)
+                    items = quote.get("priceQuoteResult", [])
+                    if isinstance(items, list):
+                        total = next((r for r in items if r.get("id") == "TotalPrice"), {})
+                        val = total.get("value", "")
+                        unit = total.get("unit", "SEK")
+                        if val:
+                            estimated_price = f"{val} {unit}"
+                            logger.info(f"  Uppskattat pris (avtalspris): {estimated_price}")
+                except Exception as e:
+                    logger.debug(f"  Kunde inte hämta pris: {e}")
 
         # 6. Skicka kundmail (om e-post finns och enot-notifiering är aktiv)
         has_enot = any(n.opt_id == "enot" for n in shipment.notifications)
@@ -270,11 +296,14 @@ class ShipmentOrchestrator:
         logger.info(f"  KLAR: Order {shipment.order_no}, tracking: {tracking}")
 
         # Notifiera tray UI
-        self._notify("shipment_ok", {
+        event_data = {
             "order_no": shipment.order_no,
             "tracking": tracking,
             "carrier": carrier.value,
-        })
+        }
+        if estimated_price:
+            event_data["estimated_price"] = estimated_price
+        self._notify("shipment_ok", event_data)
 
     def _acquire_lock(self, filepath: Path) -> bool:
         """Skapar lockfil för att förhindra dubbelbearbetning."""

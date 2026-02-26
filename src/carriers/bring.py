@@ -45,6 +45,7 @@ class BringClient(CarrierClient):
     """Klient för Bring Booking API."""
 
     def __init__(self, config: dict, sender_config: dict):
+        self._bring_config = config
         self.api_uid = config["api_uid"]
         self.api_key = config["api_key"]
         self.customer_number = config.get("customer_number") or sender_config.get(
@@ -194,12 +195,14 @@ class BringClient(CarrierClient):
         width = max(1, width)
         height = max(1, height)
 
+        svc_ids = list(_parse_additional_services(shipment, {"bring": self._bring_config}))
+        additional_services = [{"id": sid} for sid in svc_ids]
         consignment: dict = {
             "shippingDateTime": _bring_datetime_now(),
             "product": {
                         "id": product_id,
                         "customerNumber": self.customer_number,
-                        "additionalServices": [],
+                        "additionalServices": additional_services,
                     },
                     "parties": {
                         "sender": {
@@ -247,8 +250,9 @@ class BringClient(CarrierClient):
         }
         # Bulk-produkter (0342/0332) kräver consolidatedShipmentId från Mybring.
         # Skapa pall i Mybring → kopiera bulk-ID → sätt i config eller srvid: BRING:0342:CS059102945NO
+        addon_raw = (shipment.service.addon or "").strip()
         consolidated_id = (
-            (shipment.service.addon or "").strip()
+            _extract_bulk_id_from_addon(addon_raw)
             or (self._consolidated_shipment_id or "").strip()
             or ""
         )
@@ -262,6 +266,53 @@ class BringClient(CarrierClient):
             consignment["references"] = {"consolidatedShipmentId": str(consolidated_id)[:20]}
 
         return {"schemaVersion": 1, "consignments": [consignment]}
+
+
+def _parse_additional_services(shipment: Shipment, config: Optional[dict] = None) -> list[str]:
+    """Extraherar additionalServices från shipment och config.
+
+    Mappning via srvid addon:
+      BRING:0332:LQ      → begränsad mängd (0003)
+      BRING:0342:SOCIAL  → social kontroll (1082) — för Pickup Parcel (0340/0342)
+    Config: bring.social_control: true → lägger till 1082 på Pickup Parcel (0340/0342).
+    OBS: 1082 stöds för Pickup Parcel, INTE för 0332 Business Parcel Bulk.
+    """
+    services = []
+    addon = (shipment.service.addon or "").strip()
+    prod = (shipment.service.product_code or "").upper()
+    for part in addon.replace(",", ":").split(":"):
+        part = part.strip().upper()
+        if part in ("LQ", "0003") and "0003" not in services:
+            services.append("0003")
+        elif part in ("SOCIAL", "1082") and "1082" not in services:
+            if prod not in ("0332", "BUSINESS_PARCEL_BULK"):
+                services.append("1082")
+    bring_cfg = (config or {}).get("bring", {}) if config else {}
+    if bring_cfg.get("social_control", False) and "1082" not in services:
+        # Endast för Pickup Parcel (0340, 0342)
+        if prod in ("0340", "0342", "PICKUP_PARCEL", "PICKUP_PARCEL_BULK"):
+            services.append("1082")
+    return services
+
+
+def _looks_like_bulk_id(s: str) -> bool:
+    """Kontrollerar om sträng ser ut som Bring bulk-ID (CS/CL + siffror + NO)."""
+    s = (s or "").strip()
+    return len(s) >= 10 and (s.startswith("CS") or s.startswith("CL")) and s.upper().endswith("NO")
+
+
+def _extract_bulk_id_from_addon(addon: str) -> str:
+    """Hämtar bulk-ID från addon om det finns (t.ex. CS059102945NO, CL311690551NO).
+
+    Addon kan vara "CS123NO", "CS123:LQ" — vi letar efter segment som ser ut som bulk-ID.
+    """
+    if not addon:
+        return ""
+    for part in addon.replace(",", ":").split(":"):
+        part = part.strip()
+        if _looks_like_bulk_id(part):
+            return part
+    return ""
 
 
 def _clean_postal(zipcode: str) -> str:
