@@ -130,36 +130,31 @@ class GarpXMLParser:
             booking=booking,
         )
 
-    # Mappning av legacy GARP/Unifaun tjänstekoder → TRANSPORTÖR:PRODUKTKOD
-    # Används när XML har äldre koder (t.ex. ASPO) istället för DHL:103
-    LEGACY_SRVID_MAPPING = {
-        "ASPO": "DHL:103",   # DHL ServicePoint B2C (Unifaun)
-    }
+    # GARP/Unifaun: Använd DHL:102 resp DHL:103 direkt (inte AEX, ASPO).
 
     @classmethod
     def _parse_srvid(cls, srvid: str) -> tuple[CarrierType, str, str]:
         """Parsar srvid i formatet TRANSPORTÖR:PRODUKTKOD[:TILLÄGG].
 
-        Stödjer också legacy GARP/Unifaun-koder (ASPO m.fl.) via LEGACY_SRVID_MAPPING.
-
         Exempel:
-            "DHL:104"       → (CarrierType.DHL, "104", "")
+            "DHL:102"       → (CarrierType.DHL, "102", "")  # Paket B2B
+            "DHL:103"       → (CarrierType.DHL, "103", "")  # ServicePoint
             "DHL:104:AVIS"  → (CarrierType.DHL, "104", "AVIS")
-            "ASPO"          → (CarrierType.DHL, "103", "")  # via mapping
+
+        I GARP: sätt DHL:102 (AEX ersätts), DHL:103 (ASPO ersätts).
 
         Raises:
             ValueError: Om srvid inte kan parsas.
         """
         raw = srvid.strip()
-        # Kolla legacy-mappning först (t.ex. ASPO → DHL:103)
-        if ":" not in raw and raw in cls.LEGACY_SRVID_MAPPING:
-            raw = cls.LEGACY_SRVID_MAPPING[raw]
-
         parts = raw.split(":")
         if len(parts) < 2:
+            hint = ""
+            if raw.upper() in ("AEX", "ASPO"):
+                hint = f" Ange DHL:102 istället för AEX, DHL:103 istället för ASPO."
             raise ValueError(
                 f"Ogiltig srvid: '{srvid}'. "
-                f"Förväntat format: TRANSPORTÖR:PRODUKTKOD[:TILLÄGG] eller känd legacy-kod"
+                f"Förväntat format: TRANSPORTÖR:PRODUKTKOD[:TILLÄGG] (t.ex. DHL:102, DHL:103).{hint}"
             )
 
         carrier_str = parts[0].strip().upper()

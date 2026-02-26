@@ -97,8 +97,11 @@ logging:
 # =============================================================
 # DHL produktkoder (srvid-format i GARP: DHL:PRODUKTKOD[:TILLÄGG])
 #
-# Legacy GARP/Unifaun-koder mappas automatiskt:
-#   ASPO → DHL:103 (ServicePoint B2C)
+# GARP/Unifaun: Ersätt gamla tjänstekoder med vårt format:
+#   Unifaun   →  Ange i GARP
+#   ---------    --------------
+#   AEX       →  DHL:102   (Paket B2B, hemleverans)
+#   ASPO      →  DHL:103   (ServicePoint, ombud)
 #
 # Produkt  | Namn                    | Notering
 # ---------|-------------------------|----------------------------------

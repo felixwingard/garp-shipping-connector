@@ -19,7 +19,7 @@
   <val n="to">WEB</val>
   <val n="deliveryinstruction"></val>
   <val n="reference">W66344-133251</val>
-  <service srvid="ASPO">
+  <service srvid="DHL:103">
    <addon adnid="">
    </addon>
    <booking>

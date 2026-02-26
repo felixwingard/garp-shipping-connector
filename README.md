@@ -93,6 +93,8 @@ XML-filerna ska följa Unifaun OnlineConnect-format. Tjänstekod (`srvid`) i for
 TRANSPORTÖR:PRODUKTKOD[:TILLÄGG]
 ```
 
+**GARP/Unifaun:** Använd DHL:102 och DHL:103 direkt (ersätt AEX → DHL:102, ASPO → DHL:103).
+
 **Exempel:**
 - `DHL:102` — DHL Paket (B2B, företagspaket)
 - `DHL:102:AVIS` — Med aviserings-e-post

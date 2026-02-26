@@ -76,8 +76,8 @@ class TestParseFile:
         assert s.receiver.city == "OSLO"
         assert s.containers[0].weight == 8.2
 
-    def test_parse_garp_format_legacy_srvid(self, parser):
-        """Format från GARP-export med legacy srvid (ASPO = DHL ServicePoint)."""
+    def test_parse_garp_format(self, parser):
+        """Format från GARP-export med srvid DHL:103 (ServicePoint)."""
         filepath = FIXTURES_DIR / "sample_garp_format.xml"
         shipments = parser.parse_file(filepath)
 
@@ -100,10 +100,10 @@ class TestParseFile:
         assert s.receiver.sms == "+46700322585"
         assert s.receiver.email == "felix@ernstp.se"
 
-        # Legacy ASPO mappas till DHL:103
+        # DHL:103 = ServicePoint
         assert s.service.carrier == CarrierType.DHL
         assert s.service.product_code == "103"
-        assert s.service.raw_srvid == "ASPO"
+        assert s.service.raw_srvid == "DHL:103"
 
         # Bokning
         assert s.service.booking is not None
@@ -158,12 +158,15 @@ class TestParseSrvid:
         assert code == "BUSINESS_PARCEL_BULK"
         assert addon == ""
 
-    def test_legacy_aspo(self, parser):
-        """ASPO (Unifaun) mappas till DHL:103."""
-        carrier, code, addon = parser._parse_srvid("ASPO")
-        assert carrier == CarrierType.DHL
-        assert code == "103"
-        assert addon == ""
+    def test_aex_rejected_with_hint(self, parser):
+        """AEX (Unifaun) accepteras ej — använd DHL:102 i GARP."""
+        with pytest.raises(ValueError, match="DHL:102 istället för AEX"):
+            parser._parse_srvid("AEX")
+
+    def test_aspo_rejected_with_hint(self, parser):
+        """ASPO (Unifaun) accepteras ej — använd DHL:103 i GARP."""
+        with pytest.raises(ValueError, match="DHL:103 istället för ASPO"):
+            parser._parse_srvid("ASPO")
 
     def test_mojibake_fix(self, parser):
         """UTF-8 felaktigt tolkat som Latin-1 repareras (Ã¤ → ä)."""

@@ -872,6 +872,15 @@ class DHLClient(CarrierClient):
             json=pickup_payload,
             timeout=self.timeout,
         )
+        if response.status_code >= 400:
+            try:
+                err = response.json()
+                msg = err.get("UserMessage") or err.get("Message") or err.get("message") or response.text[:500]
+                logger.error(
+                    f"DHL PickupRequest {response.status_code}: {msg}"
+                )
+            except Exception:
+                logger.error(f"DHL PickupRequest {response.status_code}: {response.text[:500]}")
         response.raise_for_status()
         data = response.json()
 
