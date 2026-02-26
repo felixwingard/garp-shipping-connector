@@ -4,9 +4,8 @@
 
 ## Steg 1: Packa upp ZIP-filen
 
-1. Öppna den nedladdade `garp-shipping-connector-main.zip`
-2. **Extrahera** till t.ex. `C:\GARP-Shipping\` — du ska få mappen `C:\GARP-Shipping\garp-shipping-connector-main\`
-3. Öppna mappen — du ska se filer som `INSTALL.bat`, `config\`, `src\`, `scripts\` m.fl.
+1. Ladda ner `garp-shipping-connector-main.zip` från GitHub (Code → Download ZIP)
+2. **Extrahera** till `C:\GARP-Shipping\` — du ska få mappen `C:\GARP-Shipping\garp-shipping-connector-main\` med `INSTALL.bat`, `config\`, `src\` m.fl.
 
 ---
 
@@ -21,8 +20,8 @@
 
 ## Steg 3: Kör installationen
 
-1. Öppna Utforskaren och gå till projektmappen (t.ex. `C:\GARP-Shipping`)
-2. **Dubbelklicka på `INSTALL.bat`**
+1. Öppna mappen `C:\GARP-Shipping\garp-shipping-connector-main\` (där INSTALL.bat ligger)
+2. **Dubbelklicka på `INSTALL.bat`** — det startar alltid från rätt mapp
 3. Vänta tills det står "INSTALLATIONEN KLAR!"
 4. Tryck på valfri tangent för att stänga
 
@@ -75,15 +74,10 @@ Om GARP använder en annan mapp (t.ex. via RDS/tsclient), justera `paths.watch_d
 
 ## Steg 6: SumatraPDF (för utskrift)
 
-Connectorn skriver ut PDF-etiketter via SumatraPDF. Lägg `SumatraPDF.exe` i projektmappen och sätt sökvägen i config.
-
-1. Ladda ner: https://www.sumatrapdfreader.org → 64-bit Portable → packa upp
-2. Kopiera `SumatraPDF.exe` till `C:\GARP-Shipping\garp-shipping-connector-main\` (samma mapp som INSTALL.bat)
-3. Öppna `config\config.yaml` och lägg till under `printers:`:
-   ```yaml
-   sumatra_exe: "C:\\GARP-Shipping\\garp-shipping-connector-main\\SumatraPDF.exe"
-   ```
-   Då hittas SumatraPDF alltid oavsett var programmet startas från.
+`INSTALL.bat` laddar ner SumatraPDF automatiskt till projektmappen. Om det misslyckas (t.ex. brandvägg): ladda ner från sumatrapdfreader.org → 64-bit Portable, packa upp och lägg `SumatraPDF.exe` i samma mapp som `INSTALL.bat`. Om utskriften fortfarande inte fungerar, lägg till i `config\config.yaml` under `printers:`:
+```yaml
+sumatra_exe: "C:\\GARP-Shipping\\garp-shipping-connector-main\\SumatraPDF.exe"
+```
 
 ---
 

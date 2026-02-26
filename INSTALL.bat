@@ -1,10 +1,17 @@
 @echo off
 chcp 65001 >nul
 title GARP Shipping Connector — Installation
+
+REM Alltid starta från mappen där INSTALL.bat ligger
+cd /d "%~dp0"
+set INSTALL_DIR=%CD%
+
 echo.
 echo  ============================================
 echo   GARP Shipping Connector — Installation
 echo  ============================================
+echo.
+echo  Projektmapp: %INSTALL_DIR%
 echo.
 
 REM Kontrollera Python (prova python eller py-launcher)
@@ -54,14 +61,14 @@ echo.
 
 echo  [4/5] Laddar ner SumatraPDF (for PDF-utskrift)...
 if not exist "SumatraPDF.exe" (
-    powershell -NoProfile -Command "try { Invoke-WebRequest -Uri 'https://www.sumatrapdfreader.org/dl/rel/3.5.2/SumatraPDF-3.5.2-64.zip' -OutFile 'SumatraPDF.zip' -UseBasicParsing; Expand-Archive -Path 'SumatraPDF.zip' -DestinationPath '.' -Force; $e = Get-ChildItem -Recurse -Filter 'SumatraPDF.exe' | Select-Object -First 1; if ($e) { Copy-Item $e.FullName -Destination 'SumatraPDF.exe' -Force }; Remove-Item 'SumatraPDF.zip' -Force -ErrorAction SilentlyContinue; Get-ChildItem -Filter 'SumatraPDF-*' -Directory | Remove-Item -Recurse -Force } catch { Write-Host 'SumatraPDF: Ladda ner manuellt fran sumatrapdfreader.org' }"
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "try { Invoke-WebRequest -Uri 'https://www.sumatrapdfreader.org/dl/rel/3.5.2/SumatraPDF-3.5.2-64.zip' -OutFile 'SumatraPDF.zip' -UseBasicParsing; Expand-Archive -Path 'SumatraPDF.zip' -DestinationPath '.' -Force; $e = Get-ChildItem -Recurse -Filter 'SumatraPDF.exe' | Select-Object -First 1; if ($e) { Copy-Item $e.FullName -Destination 'SumatraPDF.exe' -Force }; Remove-Item 'SumatraPDF.zip' -Force -ErrorAction SilentlyContinue; Get-ChildItem -Filter 'SumatraPDF-*' -Directory | Remove-Item -Recurse -Force; Write-Host 'SumatraPDF nedladdad!' } catch { Write-Host 'SumatraPDF: Ladda ner manuellt fran sumatrapdfreader.org - 64-bit Portable' }"
 ) else (
     echo         SumatraPDF finns redan.
 )
 echo.
 
 echo  [5/5] Skapar genvag pa skrivbordet...
-powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'GARP Shipping.lnk')); $Shortcut.TargetPath = '%PYTHONW%'; $Shortcut.Arguments = '-m src'; $Shortcut.WorkingDirectory = '%CD%'; $Shortcut.Description = 'GARP Shipping Connector'; $Shortcut.Save()"
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'GARP Shipping.lnk')); $Shortcut.TargetPath = '%PYTHONW%'; $Shortcut.Arguments = '-m src'; $Shortcut.WorkingDirectory = '%INSTALL_DIR%'; $Shortcut.Description = 'GARP Shipping Connector'; $Shortcut.Save()"
 echo         Klart!
 echo.
 
