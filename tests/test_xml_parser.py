@@ -124,6 +124,45 @@ class TestParseFile:
         assert s.notifications[0].opt_id == "enot"
         assert "W66344" in s.notifications[0].message
 
+    def test_address2_fallback_when_address1_empty(self, parser):
+        """GARP lägger ibland hela gatan i address2 — ska flyttas till address1."""
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <data>
+         <receiver rcvid="X">
+          <val n="name">Test AB</val>
+          <val n="address1"></val>
+          <val n="address2">Storgatan 42</val>
+          <val n="zipcode">11122</val>
+          <val n="city">Stockholm</val>
+          <val n="country">SE</val>
+         </receiver>
+         <shipment orderno="T1">
+          <val n="from">S</val>
+          <service srvid="DHL:102"></service>
+         </shipment>
+        </data>"""
+        shipments = parser.parse_string(xml)
+        assert shipments[0].receiver.address1 == "Storgatan 42"
+        assert shipments[0].receiver.address2 == ""
+
+    def test_address1_and_address2_combined(self, parser):
+        """När båda har innehåll ska de kombineras i address1 (DHL använder bara street)."""
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+        <data>
+         <receiver rcvid="X">
+          <val n="name">Test</val>
+          <val n="address1">Storgatan 10</val>
+          <val n="address2">Lgh 5</val>
+          <val n="zipcode">11122</val>
+          <val n="city">Stockholm</val>
+          <val n="country">SE</val>
+         </receiver>
+         <shipment orderno="T1"><val n="from">S</val><service srvid="DHL:102"></service></shipment>
+        </data>"""
+        shipments = parser.parse_string(xml)
+        assert shipments[0].receiver.address1 == "Storgatan 10, Lgh 5"
+        assert shipments[0].receiver.address2 == ""
+
 
 class TestParseSrvid:
     """Tester för srvid-parsning."""

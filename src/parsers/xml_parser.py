@@ -73,11 +73,19 @@ class GarpXMLParser:
 
     def _parse_receiver(self, elem: ET.Element) -> Receiver:
         vals = self._extract_vals(elem)
+        addr1 = vals.get("address1", "").strip()
+        addr2 = vals.get("address2", "").strip()
+        # GARP kan lägga hela gatan i address2 — DHL använder bara address1 som street
+        if not addr1 and addr2:
+            addr1, addr2 = addr2, ""  # Flytta address2 till address1
+        elif addr1 and addr2:
+            addr1 = f"{addr1}, {addr2}"  # Båda har innehåll → kombinerat som street
+            addr2 = ""
         return Receiver(
             rcvid=elem.get("rcvid", "").strip(),
             name=vals.get("name", ""),
-            address1=vals.get("address1", ""),
-            address2=vals.get("address2", ""),
+            address1=addr1,
+            address2=addr2,
             zipcode=vals.get("zipcode", ""),
             city=vals.get("city", ""),
             country=vals.get("country", ""),
