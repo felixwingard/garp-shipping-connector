@@ -158,11 +158,15 @@ class LabelPrinter:
         if cwd not in search_roots:
             search_roots.append(cwd)
         for root in search_roots:
-            # Direkt i root — olika namn beroende på nedladdning
+            # Direkt i root — olika namn: SumatraPDF.exe, SumatraPDF-3.5.2-64.exe
             for name in ("SumatraPDF.exe", "SumatraPDF-3.5.2-64.exe"):
                 direct = root / name
                 if direct.is_file():
                     return str(direct)
+            # Glob: alla SumatraPDF*.exe i root
+            for exe in root.glob("SumatraPDF*.exe"):
+                if exe.is_file():
+                    return str(exe)
             # Vanliga unpack-mappar
             for subname in ("SumatraPDF-3.5.2-64", "SumatraPDF-3.5.2", "SumatraPDF-*"):
                 if "*" in subname:

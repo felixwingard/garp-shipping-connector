@@ -35,12 +35,25 @@ def get_example_config_path() -> Path:
     return beside
 
 
+def _deep_merge_defaults(defaults: dict, user: dict) -> dict:
+    """Fyll i saknade nycklar från defaults. Användarens värden vinner alltid."""
+    result = dict(defaults)
+    for k, v in user.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = _deep_merge_defaults(result[k], v)
+        else:
+            result[k] = v
+    return result
+
+
 def load_config() -> dict:
-    """Laddar config.yaml med miljövariabelersättning."""
+    """Laddar config.yaml med miljövariabelersättning.
+    Nya nycklar från config.example.yaml mergas in automatiskt — slipper manuell kopiering vid git pull.
+    """
     config_path = get_config_path()
+    example_path = get_example_config_path()
 
     if not config_path.exists():
-        example_path = get_example_config_path()
         if example_path.exists():
             import shutil
 
@@ -65,4 +78,15 @@ def load_config() -> dict:
         return os.environ.get(match.group(1), match.group(0))
 
     resolved = re.sub(r"\$\{(\w+)\}", replace_env, raw)
-    return yaml.safe_load(resolved)
+    user_config = yaml.safe_load(resolved) or {}
+
+    # Merga in defaults för saknade nycklar (t.ex. print_document_for_products vid ny git pull)
+    if example_path.exists():
+        try:
+            with open(example_path, "r", encoding="utf-8") as ef:
+                example_raw = re.sub(r"\$\{(\w+)\}", replace_env, ef.read())
+            defaults = yaml.safe_load(example_raw) or {}
+            return _deep_merge_defaults(defaults, user_config)
+        except Exception:
+            pass  # Vid fel, använd bara user_config
+    return user_config

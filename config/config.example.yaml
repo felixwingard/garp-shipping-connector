@@ -59,8 +59,11 @@ dhl:
 printers:
   label_printer_name: "ZDesigner ZD420-203dpi ZPL"  # Ert Zebra-skrivarnamn
   label_format: "pdf"                                # pdf eller zpl
-  document_printer_name: ""                          # A4-skrivare (lämna tomt = ej utskrift)
+  document_printer_name: ""                          # A4-skrivare för CMR/fraktlista
   document_format: "pdf"
+  # Endast dessa produktkoder skriver ut dokument (CMR för pall). Tom lista = aldrig skriv ut.
+  # Exempel: [202, 210, 205] = Euroconnect, Pall, Euroline. Paket (102,103,109) = bara mailet.
+  print_document_for_products: [202, 210, 205]
   # SumatraPDF — sätt om auto-hitta misslyckas. Filen kan heta SumatraPDF.exe eller SumatraPDF-3.5.2-64.exe:
   # sumatra_exe: "C:\\GARP-Shipping\\garp-shipping-connector-main\\SumatraPDF-3.5.2-64.exe"
 

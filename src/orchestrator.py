@@ -201,13 +201,29 @@ class ShipmentOrchestrator:
         if not printed:
             logger.warning(f"  Etikett-utskrift misslyckades för {shipment.order_no}")
 
-        # 4. Skriv ut fraktlista (→ A4) om den finns (sparas ej — bifogas mailet)
+        # 4. Skriv ut fraktlista/CMR (→ A4) om den finns + produkt kräver utskrift (t.ex. pall)
+        # print_document_for_products: [202, 210, 205] = endast pall etc. [] = aldrig. Saknas = alltid.
         if shipment_list:
-            doc_printed = self.printer.print_document(shipment_list, "pdf", shipment.order_no)
-            if doc_printed:
-                logger.info(f"  Fraktlista utskriven för order {shipment.order_no}")
+            prod_codes = self.config.get("printers", {}).get("print_document_for_products")
+            if prod_codes is None:
+                do_print = True  # Nyckel saknas = bakåtkompatibelt
+            elif isinstance(prod_codes, list):
+                do_print = (
+                    bool(prod_codes)
+                    and shipment.service
+                    and str(shipment.service.product_code) in [str(p) for p in prod_codes]
+                )
             else:
-                logger.warning(f"  Fraktlista utskriven misslyckades för {shipment.order_no}")
+                do_print = True
+            if do_print:
+                doc_printed = self.printer.print_document(shipment_list, "pdf", shipment.order_no)
+                if doc_printed:
+                    logger.info(f"  Fraktlista/CMR utskriven för order {shipment.order_no}")
+                else:
+                    logger.warning(f"  Fraktlista utskrift misslyckades för {shipment.order_no}")
+            else:
+                pc = getattr(shipment.service, "product_code", "") if shipment.service else ""
+                logger.debug(f"  Dokument utskrivs ej för produkt {pc} (endast mail)")
 
         # 5. Estimerat leveransdatum (DHL TimeTable API)
         estimated_delivery = ""
