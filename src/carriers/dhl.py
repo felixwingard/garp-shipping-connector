@@ -88,10 +88,11 @@ PAYER_CODE_BY_PRODUCT = {
 }
 
 # PriceQuote API: dhlProductCode (Swagger ShipmentModel)
-# För utrikes pall: 210 är inrikes — använd t.ex. SPI/PPI för Polen
+# Paket 102/103: använd numerisk kod (DHL:s exempel: quoteforgrossprice med "103")
+# DHLPaket ger fel pris för 103; "103" ger korrekt ombudspris (48 vs 74)
 DHL_PRODUCT_CODE_FOR_QUOTE = {
-    "102": "DHLPaket",
-    "103": "DHLPaket",  # ServicePoint = ombud; PriceQuote kan använda DHLPaket
+    "102": "102",  # DHL Paket företag (hemleverans)
+    "103": "103",  # DHL ServicePoint (ombud)
     "109": "DHLParcelConnect",
     "112": "DHLParcelConnect",  # Plus = variant; prova samma som 109
     "202": "DHLEuroconnect",
