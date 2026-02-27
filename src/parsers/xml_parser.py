@@ -3,10 +3,14 @@
 GARP exporterar XML i ett format baserat på Unifaun OnlineConnect.
 Tjänstekoder (srvid) har uppdaterats till formatet TRANSPORTÖR:PRODUKTKOD[:TILLÄGG]
 istället för Unifauns egna koder.
+
+Hanterar kända GARP-exportproblem:
+- Orfana </booking>-tagg innan </service> (saknad öppningstag) → tas bort.
 """
 
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 import logging
 from pathlib import Path
@@ -29,9 +33,16 @@ class GarpXMLParser:
         En XML-fil kan innehålla flera shipments.
         Kodning: ISO-8859-1 (hanteras av ElementTree via XML-deklarationen).
         """
-        tree = ET.parse(filepath)
-        root = tree.getroot()  # <data>
-
+        # Använd deklarationens encoding, fallback UTF-8/ISO-8859-1
+        raw_bytes = filepath.read_bytes()
+        enc_match = re.search(rb'encoding\s*=\s*["\']([^"\']+)["\']', raw_bytes[:500])
+        encoding = enc_match.group(1).decode("ascii", errors="ignore").upper() if enc_match else "UTF-8"
+        if encoding == "ISO-8859-1":
+            raw = raw_bytes.decode("iso-8859-1", errors="replace")
+        else:
+            raw = raw_bytes.decode("utf-8", errors="replace")
+        raw = self._fix_garp_xml(raw)
+        root = ET.fromstring(raw)
         # Receiver kan finnas på root-nivå (delad av alla shipments)
         receiver_elem = root.find("receiver")
         shared_receiver = self._parse_receiver(receiver_elem) if receiver_elem is not None else None
@@ -53,6 +64,7 @@ class GarpXMLParser:
 
     def parse_string(self, xml_string: str) -> list[Shipment]:
         """Parsar XML från en sträng (användbart för tester)."""
+        xml_string = self._fix_garp_xml(xml_string)
         root = ET.fromstring(xml_string)
 
         receiver_elem = root.find("receiver")
@@ -81,6 +93,12 @@ class GarpXMLParser:
         elif addr1 and addr2:
             addr1 = f"{addr1}, {addr2}"  # Båda har innehåll → kombinerat som street
             addr2 = ""
+        country = vals.get("country", "").strip()
+        zipcode = vals.get("zipcode", "").strip().upper()
+        # GARP kan lämna country tomt — gissa från postnummer (N-0582 = Norge, 0582 = 4 siffror)
+        z = zipcode.replace(" ", "")
+        if not country and (zipcode.startswith("N-") or (len(z) == 4 and z.isdigit())):
+            country = "NO"
         return Receiver(
             rcvid=elem.get("rcvid", "").strip(),
             name=vals.get("name", ""),
@@ -88,7 +106,7 @@ class GarpXMLParser:
             address2=addr2,
             zipcode=vals.get("zipcode", ""),
             city=vals.get("city", ""),
-            country=vals.get("country", ""),
+            country=country,
             phone=vals.get("phone", ""),
             email=vals.get("email", ""),
             contact=vals.get("contact", ""),
@@ -137,6 +155,14 @@ class GarpXMLParser:
             raw_srvid=raw_srvid,
             booking=booking,
         )
+
+    @staticmethod
+    def _fix_garp_xml(raw: str) -> str:
+        """Åtgärdar kända GARP-exportproblem som ger mismatched tag."""
+        # GARP exporterar ibland </addon></booking></service> utan <booking> — ta bort orfan </booking>
+        # Endast när </booking> kommer direkt efter </addon> (för att undvika giltiga booking-block)
+        raw = re.sub(r"(</addon>\s*)</booking>(\s*</service>)", r"\1\2", raw)
+        return raw
 
     # GARP/Unifaun: Använd DHL:102 resp DHL:103 direkt (inte AEX, ASPO).
 

@@ -213,6 +213,8 @@ class BringBulkWindow(tk.Toplevel):
 
     def _update_parcel_count_display(self):
         """Uppdaterar antal kolli och totalvikt från config (räknas vid varje bokning)."""
+        if not hasattr(self, "num_packages_var") or not hasattr(self, "weight_var"):
+            return
         bring = self.config.get("bring", {})
         count = bring.get("bulk_parcel_count", 0)
         self.num_packages_var.set(str(count) if count else "")
