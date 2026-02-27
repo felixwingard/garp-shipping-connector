@@ -123,6 +123,12 @@ class BringBulkWindow(tk.Toplevel):
     def _load_terminals(self):
         bring = self.config.get("bring", {})
         if not bring:
+            self.terminal_combo["values"] = ["Bring saknas i config — lägg till api_uid, api_key, customer_number"]
+            self._terminal_ids = []
+            return
+        if not bring.get("api_uid") or not bring.get("api_key"):
+            self.terminal_combo["values"] = ["api_uid och api_key krävs i bring-config"]
+            self._terminal_ids = []
             return
         try:
             from ..carriers.bring_bulksplit import BringBulksplitClient
@@ -133,13 +139,14 @@ class BringBulkWindow(tk.Toplevel):
             other = [t for t in terminals if t.get("countryCode") != "NO"]
             items = [f"{t.get('id', '')} — {t.get('name', '')} ({t.get('city', '')})" for t in no_terms + other]
             ids = [t.get("id", "") for t in no_terms + other]
-            self.terminal_combo["values"] = items
+            self.terminal_combo["values"] = items if items else ["Inga terminaler — kontrollera nätverk och API-åtkomst"]
             self._terminal_ids = ids
             if ids:
                 self.terminal_combo.current(0)
         except Exception as e:
+            err_msg = str(e).replace("\n", " ")[:80]
             logger.warning(f"Kunde inte hämta Bring-terminaler: {e}")
-            self.terminal_combo["values"] = ["Kunde inte hämta — kontrollera Bring-config"]
+            self.terminal_combo["values"] = [f"Fel: {err_msg}"]
             self._terminal_ids = []
 
     def _update_bulk_id_display(self):
@@ -192,8 +199,10 @@ class BringBulkWindow(tk.Toplevel):
             messagebox.showerror("Fel", "Bring är inte konfigurerad.", parent=self)
             return
         idx = self.terminal_combo.current()
-        if idx < 0 or not getattr(self, "_terminal_ids", []):
-            messagebox.showerror("Fel", "Välj en terminal.", parent=self)
+        ids = getattr(self, "_terminal_ids", [])
+        if idx < 0 or not ids:
+            msg = "Inga terminaler tillgängliga. Kontrollera Bring-config (api_uid, api_key, customer_number) och nätverk." if not ids else "Välj en terminal."
+            messagebox.showerror("Fel", msg, parent=self)
             return
         terminal_id = self._terminal_ids[idx]
         self.reserve_btn.config(state="disabled", text="Reserverar...")

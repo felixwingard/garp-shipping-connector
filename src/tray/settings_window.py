@@ -126,19 +126,16 @@ class SettingsWindow(tk.Toplevel):
             btn = ttk.Button(sec, text="…", width=3, command=lambda v=var: self._browse_folder(v))
             self._row(sec, label, e, btn)
 
-        # === Bring ===
+        # === Bring Norge ===
         sec = self._section(main, "Bring Norge")
-        self.bring_bulk_id_var = tk.StringVar()
-        bulk_entry = ttk.Entry(sec, textvariable=self.bring_bulk_id_var, width=28)
-        self._row(sec, "Bulk-ID", bulk_entry)
         hint = tk.Label(
             sec,
-            text="Skapa pall i Mybring → kopiera ID",
-            font=(_font(), 8),
-            fg="#94a3b8",
+            text="Reservera bulk-ID via Bring Bulk (tray-menyn). Bulk-ID sparas automatiskt.",
+            font=(_font(), 9),
+            fg="#64748b",
             bg="white",
         )
-        hint.pack(anchor="w", padx=PAD, pady=(0, 8))
+        hint.pack(anchor="w", padx=PAD, pady=12)
 
         # === Knappar ===
         btn_f = tk.Frame(main, bg="#fafafa")
@@ -160,9 +157,6 @@ class SettingsWindow(tk.Toplevel):
         self.watch_dir_var.set(paths.get("watch_dir", ""))
         self.done_dir_var.set(paths.get("done_dir", ""))
         self.error_dir_var.set(paths.get("error_dir", ""))
-
-        bring = self.config.get("bring", {})
-        self.bring_bulk_id_var.set(bring.get("consolidated_shipment_id", ""))
 
     def _get_printers(self) -> list:
         if platform.system() != "Windows":
@@ -202,10 +196,6 @@ class SettingsWindow(tk.Toplevel):
         self.config["paths"]["watch_dir"] = self.watch_dir_var.get()
         self.config["paths"]["done_dir"] = self.done_dir_var.get()
         self.config["paths"]["error_dir"] = self.error_dir_var.get()
-
-        if "bring" not in self.config:
-            self.config["bring"] = {}
-        self.config["bring"]["consolidated_shipment_id"] = self.bring_bulk_id_var.get().strip()
 
         try:
             with open(get_config_path(), "w", encoding="utf-8") as f:
