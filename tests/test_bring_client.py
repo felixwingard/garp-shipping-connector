@@ -269,3 +269,8 @@ class TestCleanPostal:
 
     def test_dk_prefix_stripped(self):
         assert _clean_postal("DK-1002") == "1002"
+
+    def test_norway_n_prefix_stripped(self):
+        """Norge: N-0582 måste bli 0582 (Bring kräver 4 siffror)."""
+        assert _clean_postal("N-0582") == "0582"
+        assert _clean_postal("NO-0154") == "0154"

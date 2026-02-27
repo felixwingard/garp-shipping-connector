@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from typing import Optional
 
 import requests
@@ -425,10 +426,10 @@ def _extract_bulk_id_from_addon(addon: str) -> str:
 
 
 def _clean_postal(zipcode: str) -> str:
-    """Rensar postnummer (ta bort landskod-prefix)."""
-    cleaned = zipcode.strip()
-    if len(cleaned) > 3 and cleaned[2] == "-" and cleaned[:2].isalpha():
-        cleaned = cleaned[3:]
+    """Rensar postnummer för Bring. Norge kräver 4 siffror — ta bort N- prefix."""
+    cleaned = zipcode.strip().replace(" ", "")
+    # Norge: N-0582 eller NO-0582 → 0582
+    cleaned = re.sub(r"^[A-Z]{1,2}-", "", cleaned, flags=re.IGNORECASE)
     return cleaned
 
 
