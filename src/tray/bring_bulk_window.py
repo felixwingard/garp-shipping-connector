@@ -281,13 +281,23 @@ class BringBulkWindow(tk.Toplevel):
                 orders=orders,
                 config=self.config,
             )
+            if excel_path is None:
+                messagebox.showwarning(
+                    "Excel kunde inte skapas",
+                    "openpyxl saknas eller kunde inte ladda. "
+                    "Excel-backup skapas ej. Installera: pip install openpyxl",
+                    parent=self,
+                )
             clear_bulk_orders(bid)
         except Exception as e:
-            logger.warning(f"Excel-backup vid avsluta bulk: {e}")
+            logger.warning(f"Excel-backup vid avsluta bulk: {e}", exc_info=True)
+            export_dir = self.config.get("paths", {}).get("bulk_exports_dir", "(standardmapp)")
             messagebox.showwarning(
                 "Excel kunde inte sparas",
-                f"Excel-backup kunde inte skapas:\n{e}\n\nKontrollera att bulk_exports_dir i config.yaml "
-                "pekar på en skrivbar mapp (t.ex. C:\\GARP\\BulkExports).",
+                f"Excel-backup kunde inte skapas:\n\n{type(e).__name__}: {e}\n\n"
+                f"Mål-mapp (config): {export_dir}\n\n"
+                "Kontrollera att mappen finns och är skrivbar. "
+                "Se garp_shipping.log för mer information.",
                 parent=self,
             )
         self._save_bulk_id("", reset_parcel_count=True)

@@ -32,9 +32,14 @@ def _exports_dir(config: Optional[dict] = None) -> Path:
     if config:
         p = config.get("paths", {}).get("bulk_exports_dir")
         if p and str(p).strip():
-            d = Path(p).expanduser().resolve()
-            d.mkdir(parents=True, exist_ok=True)
-            return d
+            # Windows: undvik escape-problem, använd Path med normaliserad sökväg
+            raw = str(p).strip().replace("\\", "/")
+            d = Path(raw).expanduser().resolve()
+            try:
+                d.mkdir(parents=True, exist_ok=True)
+                return d
+            except OSError as e:
+                logger.warning(f"bulk_exports_dir {d} ej skrivbar: {e}, använder standardmapp")
     d = get_base_dir() / _EXPORTS_DIR
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -264,8 +269,26 @@ def export_bulk_to_excel(
 
     try:
         wb.save(filepath)
-    except Exception as e:
-        logger.error(f"Kunde inte spara Excel till {filepath}: {e}")
-        raise
+    except PermissionError as e:
+        # Fallback: försök spara i app-mappen om config-sökväg misslyckas
+        fallback = get_base_dir() / _EXPORTS_DIR / filename
+        try:
+            fallback.parent.mkdir(parents=True, exist_ok=True)
+            wb.save(fallback)
+            logger.warning(f"Sparade i fallback-mapp: {fallback} (pga {e})")
+            return fallback
+        except Exception as e2:
+            logger.error(f"Kunde inte spara Excel varken till {filepath} eller {fallback}: {e2}")
+            raise
+    except OSError as e:
+        fallback = get_base_dir() / _EXPORTS_DIR / filename
+        try:
+            fallback.parent.mkdir(parents=True, exist_ok=True)
+            wb.save(fallback)
+            logger.warning(f"Sparade i fallback-mapp: {fallback} (pga {e})")
+            return fallback
+        except Exception as e2:
+            logger.error(f"Kunde inte spara Excel: {e2}")
+            raise
     logger.info(f"Bulk Excel-backup sparad: {filepath}")
     return filepath
