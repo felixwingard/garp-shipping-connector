@@ -285,6 +285,7 @@ class BringClient(CarrierClient):
         weight = container.weight if container else 1.0
         if weight <= 0:
             weight = 1.0
+        copies = container.copies if container else 1
 
         # Dimensioner i cm — min 1 för Bring
         length = int(container.length) if container and container.length > 0 else 20
@@ -335,7 +336,7 @@ class BringClient(CarrierClient):
                     },
                     "packages": [
                         {
-                            "weightInKg": weight,
+                            "weightInKg": weight / copies if copies > 0 else weight,
                             "dimensions": {
                                 "lengthInCm": length,
                                 "widthInCm": width,
@@ -345,6 +346,7 @@ class BringClient(CarrierClient):
                                 container.contents[:35] if container and container.contents else ""
                             ),
                         }
+                        for _ in range(max(1, copies))
                     ],
         }
         # Bulk-produkter (0342/0332) kräver consolidatedShipmentId från Mybring.

@@ -247,15 +247,19 @@ class DHLClient(CarrierClient):
                 barcode_id = pieces[0].get("barcodeId", "")
 
         # Spara TI i cache: merge request (parties, etc.) med response (id, pieces med barcode)
-        # Behövs för Print API och PickupRequest (DHL kräver full payload)
+        # Behövs för Print API och PickupRequest. Behåll ALLA pieces så flerkolli får rätt antal etiketter.
         merged = {**payload}
         merged["id"] = ti_id
         our_pieces = payload.get("pieces", [])
         if pieces and our_pieces:
-            # Behåll våra dimensioner, använd DHL:s id (barcode)
-            merged_piece = {**our_pieces[0]}
-            merged_piece["id"] = pieces[0].get("id", our_pieces[0].get("id", [""]))
-            merged["pieces"] = [merged_piece]
+            # Merga: använd DHL:s id (barcode) för varje piece, behåll våra dimensioner
+            merged_pieces = []
+            for i, resp_piece in enumerate(pieces):
+                our_p = our_pieces[i] if i < len(our_pieces) else our_pieces[0]
+                mp = {**our_p}
+                mp["id"] = resp_piece.get("id", our_p.get("id", [""]))
+                merged_pieces.append(mp)
+            merged["pieces"] = merged_pieces
         else:
             merged["pieces"] = pieces if pieces else our_pieces
         self._ti_cache[ti_id] = merged
@@ -1050,36 +1054,35 @@ class DHLClient(CarrierClient):
             product_code, "PKT"
         )
 
-        # Pieces — id måste vara string array
-        pieces = [{
-            "id": [""],
-            "packageType": pkg_type,
-            "numberOfPieces": copies,
-            "weight": weight,
-            "volume": volume,
-        }]
-
-        # Lägg till dimensioner om de finns
-        if container and container.length > 0:
-            pieces[0]["length"] = container.length
-        if container and container.width > 0:
-            pieces[0]["width"] = container.width
-        if container and container.height > 0:
-            pieces[0]["height"] = container.height
-
-        # Farligt gods: full ADR-info i piece om vi har DangerousGoodsInfo
-        # DHL Paket 102/103 stöder inte farligt gods
-        dg = getattr(shipment, "dangerous_goods", None)
-        if dg and dg.un_number and product_code not in ("102", "103"):
-            dg_obj = {
-                "unNumber": dg.un_number,
-                "adrClass": dg.adr_class or "",
-                "packingGroup": dg.packing_group or "",
-                "technicalName": dg.technical_name or "",
+        # Flerkolli: en piece per fysiskt paket så att fraktsedeln visar rätt antal
+        weight_per = weight / copies if copies > 0 else weight
+        volume_per = volume / copies if copies > 0 else volume
+        pieces = []
+        for _ in range(max(1, copies)):
+            p = {
+                "id": [""],
+                "packageType": pkg_type,
+                "numberOfPieces": 1,
+                "weight": weight_per,
+                "volume": volume_per,
             }
-            if dg.flash_point:
-                dg_obj["flashPoint"] = dg.flash_point
-            pieces[0]["dangerousGoods"] = dg_obj
+            if container and container.length > 0:
+                p["length"] = container.length
+            if container and container.width > 0:
+                p["width"] = container.width
+            if container and container.height > 0:
+                p["height"] = container.height
+            dg = getattr(shipment, "dangerous_goods", None)
+            if dg and dg.un_number and product_code not in ("102", "103"):
+                p["dangerousGoods"] = {
+                    "unNumber": dg.un_number,
+                    "adrClass": dg.adr_class or "",
+                    "packingGroup": dg.packing_group or "",
+                    "technicalName": dg.technical_name or "",
+                }
+                if dg.flash_point:
+                    p["dangerousGoods"]["flashPoint"] = dg.flash_point
+            pieces.append(p)
 
         # additionalServices: objekt med bool-värden
         # {"notification": true} — INTE {"notification": {}}
