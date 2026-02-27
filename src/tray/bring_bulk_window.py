@@ -134,10 +134,35 @@ class BringBulkWindow(tk.Toplevel):
 
         row2 = tk.Frame(inner2, bg="white")
         row2.pack(fill="x", pady=4)
-        tk.Label(row2, text="Antal kolli", font=(_font(), 9), fg="#64748b", bg="white", width=14, anchor="w").pack(side="left")
+        tk.Label(row2, text="Antal kolli (paket)", font=(_font(), 9), fg="#64748b", bg="white", width=14, anchor="w").pack(side="left")
         self.num_packages_var = tk.StringVar(value="")
         ttk.Entry(row2, textvariable=self.num_packages_var, width=10).pack(side="left")
-        tk.Label(row2, text="(räknas automatiskt per vecka — kan överstyras)", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(4, 0))
+        tk.Label(row2, text="(räknas automatiskt — kan överstyras)", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(4, 0))
+
+        row3 = tk.Frame(inner2, bg="white")
+        row3.pack(fill="x", pady=4)
+        tk.Label(row3, text="Antal pall (Bulk)", font=(_font(), 9), fg="#64748b", bg="white", width=14, anchor="w").pack(side="left")
+        self.num_pallets_var = tk.StringVar(value="1")
+        ttk.Entry(row3, textvariable=self.num_pallets_var, width=10).pack(side="left")
+        tk.Label(row3, text="(splittas på terminal)", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(4, 0))
+
+        row4 = tk.Frame(inner2, bg="white")
+        row4.pack(fill="x", pady=4)
+        tk.Label(row4, text="Hel pall till kund", font=(_font(), 9), fg="#64748b", bg="white", width=14, anchor="w").pack(side="left")
+        self.num_direct_pallets_var = tk.StringVar(value="0")
+        self.direct_pallets_weight_var = tk.StringVar(value="")
+        tk.Label(row4, text="Antal:", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(0, 4))
+        ttk.Entry(row4, textvariable=self.num_direct_pallets_var, width=4).pack(side="left")
+        tk.Label(row4, text="Vikt (kg):", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(8, 4))
+        ttk.Entry(row4, textvariable=self.direct_pallets_weight_var, width=8).pack(side="left")
+        tk.Label(row4, text="(Business Pallet, går direkt till mottagare)", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(4, 0))
+
+        row5 = tk.Frame(inner2, bg="white")
+        row5.pack(fill="x", pady=4)
+        tk.Label(row5, text="Antal fakturakopior", font=(_font(), 9), fg="#64748b", bg="white", width=14, anchor="w").pack(side="left")
+        self.num_invoices_var = tk.StringVar(value="3")
+        ttk.Entry(row5, textvariable=self.num_invoices_var, width=6).pack(side="left")
+        tk.Label(row5, text="(t.ex. 3 för SE→NO)", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(4, 0))
 
         self.register_btn = ttk.Button(
             inner2, text="Registrera pall → hämta CMR",
@@ -273,8 +298,16 @@ class BringBulkWindow(tk.Toplevel):
         except ValueError:
             messagebox.showerror("Fel", "Ange totalvikt i kg (heltal).", parent=self)
             return
-        if weight < 1:
-            messagebox.showerror("Fel", "Totalvikt måste vara minst 1 kg.", parent=self)
+        num_direct_pre = 0
+        direct_weight_pre = 0
+        try:
+            num_direct_pre = max(0, int(self.num_direct_pallets_var.get() or "0"))
+            direct_weight_pre = max(0, int(self.direct_pallets_weight_var.get() or "0"))
+        except ValueError:
+            pass
+
+        if weight < 1 and not (num_direct_pre > 0 and direct_weight_pre >= 1):
+            messagebox.showerror("Fel", "Ange totalvikt (Bulk) eller hel pall till kund med vikt.", parent=self)
             return
 
         num_packages = None
@@ -289,6 +322,16 @@ class BringBulkWindow(tk.Toplevel):
         if num_packages is None:
             num_packages = self.config.get("bring", {}).get("bulk_parcel_count")
 
+        num_pallets = 1
+        npal_str = (self.num_pallets_var.get() or "1").strip()
+        if npal_str:
+            try:
+                num_pallets = int(npal_str)
+                if num_pallets < 1:
+                    num_pallets = 1
+            except ValueError:
+                num_pallets = 1
+
         bring = self.config.get("bring", {})
         if not bring:
             messagebox.showerror("Fel", "Bring är inte konfigurerad.", parent=self)
@@ -300,16 +343,46 @@ class BringBulkWindow(tk.Toplevel):
             from ..carriers.bring_bulksplit import BringBulksplitClient
 
             client = BringBulksplitClient(bring, self.config.get("sender", {}))
+            num_direct = 0
+            direct_weight = 0
+            npd_str = (self.num_direct_pallets_var.get() or "0").strip()
+            if npd_str:
+                try:
+                    num_direct = max(0, int(npd_str))
+                except ValueError:
+                    pass
+            dw_str = (self.direct_pallets_weight_var.get() or "0").strip()
+            if dw_str:
+                try:
+                    direct_weight = max(0, int(dw_str))
+                except ValueError:
+                    pass
+
+            num_invoices_val = 3
+            ni_str = (self.num_invoices_var.get() or "3").strip()
+            if ni_str:
+                try:
+                    num_invoices_val = max(0, int(ni_str))
+                except ValueError:
+                    pass
+
             result = client.register_bulk_shipment(
                 bulk_shipment_id=bulk_id,
                 total_weight_kg=weight,
                 num_packages=num_packages,
-                service_code="0332",
+                num_pallets=num_pallets,
+                num_direct_pallets=num_direct,
+                direct_pallets_weight_kg=direct_weight,
+                num_invoices=num_invoices_val if num_invoices_val > 0 else None,
+                bulk_service_code="0332",
+                direct_service_code="0336",
             )
             waybill_url = result.get("waybillUrl", "")
             routing_url = result.get("routingLabelsUrl", "")
 
-            msg = f"Pall registrerad: {bulk_id}"
+            total_p = num_pallets + num_direct
+            pall_txt = f"{total_p} pallar" if total_p != 1 else "Pall"
+            msg = f"{pall_txt} registrerad(e): {bulk_id}"
             if waybill_url or routing_url:
                 msg += "\n\nÖppna CMR/routing i webbläsare?"
             messagebox.showinfo("Klar", msg, parent=self)

@@ -98,25 +98,61 @@ class BringBulksplitClient:
         bulk_shipment_id: str,
         total_weight_kg: int,
         num_packages: Optional[int] = None,
+        num_pallets: int = 1,
+        num_direct_pallets: int = 0,
+        direct_pallets_weight_kg: int = 0,
         num_invoices: Optional[int] = None,
-        service_code: str = "0332",
+        bulk_service_code: str = "0332",
+        direct_service_code: str = "0336",
         pallet_type: str = "EUR_PALLETS",
         shipping_date: Optional[datetime] = None,
     ) -> dict:
-        """Registrerar pall när den är packad. Returnerar waybillUrl, routingLabelsUrl."""
+        """Registrerar pall när den är packad. Returnerar waybillUrl, routingLabelsUrl.
+        num_pallets: antal bulk-pallar (0332) — splittas på terminal.
+        num_direct_pallets: antal hel pall till kund (0336 Business Pallet) — går direkt till mottagare."""
         if shipping_date is None:
             shipping_date = datetime.now(timezone.utc)
 
-        pallet = {
-            "palletType": pallet_type,
-            "services": [service_code],
-            "totalWeightKg": max(1, int(total_weight_kg)),
-        }
-        if num_packages is not None and num_packages > 0:
-            pallet["numberOfPackages"] = int(num_packages)
+        pallets = []
+
+        # Bulk-pallar (0332) — splittas på terminal
+        n = max(0, int(num_pallets))
+        if n > 0 and total_weight_kg >= 1:
+            weight_per = total_weight_kg // n
+            remainder_w = total_weight_kg % n
+            pkgs_per = (num_packages or 0) // n
+            remainder_p = (num_packages or 0) % n
+            for i in range(n):
+                w = weight_per + (1 if i < remainder_w else 0)
+                p = pkgs_per + (1 if i < remainder_p else 0) if num_packages else None
+                pallet = {
+                    "palletType": pallet_type,
+                    "services": [bulk_service_code],
+                    "totalWeightKg": max(1, w),
+                }
+                if p is not None and p > 0:
+                    pallet["numberOfPackages"] = p
+                pallets.append(pallet)
+
+        # Hel pall till kund (0336 Business Pallet) — ej splittas
+        nd = max(0, int(num_direct_pallets))
+        direct_weight_total = max(0, int(direct_pallets_weight_kg))
+        if nd > 0 and direct_weight_total > 0:
+            w_per = direct_weight_total // nd
+            rem = direct_weight_total % nd
+            for i in range(nd):
+                w = w_per + (1 if i < rem else 0)
+                pallets.append({
+                    "palletType": pallet_type,
+                    "services": [direct_service_code],
+                    "totalWeightKg": max(1, w),
+                })
+
+        if not pallets:
+            raise ValueError("Minst en pall krävs (Bulk eller hel pall till kund)")
 
         payload = {
-            "pallets": [pallet],
+            "pallets": pallets,
             "waybillType": "CMR",
             "routingLabelsType": "ROUTING",
         }
