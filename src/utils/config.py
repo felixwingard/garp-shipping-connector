@@ -53,6 +53,24 @@ def save_config(config: dict) -> None:
         yaml.dump(config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
+def increment_bring_bulk_weight(config: dict, weight_kg: float) -> float:
+    """Ökar bring.bulk_total_weight_kg, sparar till config.yaml, returnerar nytt värde."""
+    path = get_config_path()
+    with open(path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    bring = cfg.get("bring") or {}
+    current = float(bring.get("bulk_total_weight_kg", 0) or 0)
+    new_val = max(0.0, current + weight_kg)
+    bring["bulk_total_weight_kg"] = new_val
+    cfg["bring"] = bring
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
+    if "bring" not in config:
+        config["bring"] = {}
+    config["bring"]["bulk_total_weight_kg"] = new_val
+    return new_val
+
+
 def increment_bring_bulk_count(config: dict, delta: int) -> int:
     """Ökar bring.bulk_parcel_count med delta, sparar till config.yaml, returnerar nytt värde."""
     path = get_config_path()

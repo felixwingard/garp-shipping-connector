@@ -28,8 +28,9 @@ class BringBulkWindow(tk.Toplevel):
         self.on_bulk_id_reserved = on_bulk_id_reserved  # Callback när ny bulk-ID sparas
 
         self.title("Bring Bulk — Norge")
-        self.geometry("420x480")
-        self.resizable(False, False)
+        self.geometry("520x620")
+        self.minsize(420, 400)
+        self.resizable(True, True)
         self.configure(bg="#fafafa")
 
         self._center()
@@ -41,7 +42,7 @@ class BringBulkWindow(tk.Toplevel):
 
     def _center(self):
         self.update_idletasks()
-        w, h = 420, 480
+        w, h = 520, 620
         x = (self.winfo_screenwidth() // 2) - (w // 2)
         y = (self.winfo_screenheight() // 2) - (h // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
@@ -58,8 +59,34 @@ class BringBulkWindow(tk.Toplevel):
         return card
 
     def _build_ui(self):
-        main = tk.Frame(self, bg="#fafafa", padx=16, pady=16)
-        main.pack(fill="both", expand=True)
+        # Scrollbar + canvas så att allt innehåll når även i litet fönster
+        canvas = tk.Canvas(self, bg="#fafafa", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self)
+        main = tk.Frame(canvas, bg="#fafafa", padx=16, pady=16)
+
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.configure(command=canvas.yview)
+
+        def _on_frame_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_mousewheel(event):
+            import platform
+            if platform.system() == "Darwin":
+                canvas.yview_scroll(int(-1 * event.delta), "units")
+            else:
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas_window = canvas.create_window((0, 0), window=main, anchor="nw")
+        main.bind("<Configure>", _on_frame_configure)
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+
+        canvas.bind("<Configure>", _on_canvas_configure)
+        canvas.bind("<MouseWheel>", _on_mousewheel)
 
         # Reservera bulk-nummer
         sec = self._section(main, "1. Reservera bulk-nummer")
@@ -103,6 +130,7 @@ class BringBulkWindow(tk.Toplevel):
         tk.Label(row, text="Totalvikt (kg)", font=(_font(), 9), fg="#64748b", bg="white", width=14, anchor="w").pack(side="left")
         self.weight_var = tk.StringVar(value="")
         ttk.Entry(row, textvariable=self.weight_var, width=10).pack(side="left")
+        tk.Label(row, text="(räknas automatiskt — kan överstyras)", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(4, 0))
 
         row2 = tk.Frame(inner2, bg="white")
         row2.pack(fill="x", pady=4)
@@ -159,9 +187,12 @@ class BringBulkWindow(tk.Toplevel):
         self._update_parcel_count_display()
 
     def _update_parcel_count_display(self):
-        """Uppdaterar antal kolli från config (räknas vid varje bokning)."""
-        count = self.config.get("bring", {}).get("bulk_parcel_count", 0)
+        """Uppdaterar antal kolli och totalvikt från config (räknas vid varje bokning)."""
+        bring = self.config.get("bring", {})
+        count = bring.get("bulk_parcel_count", 0)
         self.num_packages_var.set(str(count) if count else "")
+        weight = bring.get("bulk_total_weight_kg", 0) or 0
+        self.weight_var.set(str(int(weight)) if weight else "")
 
     def _do_clear_bulk(self):
         """Avslutar aktuellt bulk-ID så att nästa vecka kan starta nytt."""
@@ -189,6 +220,7 @@ class BringBulkWindow(tk.Toplevel):
         cfg["bring"]["consolidated_shipment_id"] = bulk_id
         if reset_parcel_count:
             cfg["bring"]["bulk_parcel_count"] = 0
+            cfg["bring"]["bulk_total_weight_kg"] = 0
         with open(path, "w", encoding="utf-8") as f:
             yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
         if "bring" not in self.config:
@@ -196,6 +228,7 @@ class BringBulkWindow(tk.Toplevel):
         self.config["bring"]["consolidated_shipment_id"] = bulk_id
         if reset_parcel_count:
             self.config["bring"]["bulk_parcel_count"] = 0
+            self.config["bring"]["bulk_total_weight_kg"] = 0
 
     def _do_reserve(self):
         bring = self.config.get("bring", {})

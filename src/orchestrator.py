@@ -277,15 +277,18 @@ class ShipmentOrchestrator:
             label_data = result["label_data"]
             shipment_list = None
 
-            # Räkna kolli för bulk (0332/0342) — lägg till vid lyckad bokning
+            # Räkna kolli + totalvikt för bulk (0332/0342) — lägg till vid lyckad bokning
             prod = shipment.service.product_code.upper() if shipment.service else ""
             if prod in ("0332", "0342", "BUSINESS_PARCEL_BULK", "PICKUP_PARCEL_BULK"):
                 kolli = sum(c.copies for c in shipment.containers) if shipment.containers else 1
+                weight_kg = sum((c.weight or 0) * c.copies for c in shipment.containers) if shipment.containers else 0
                 try:
-                    from .utils.config import increment_bring_bulk_count
+                    from .utils.config import increment_bring_bulk_count, increment_bring_bulk_weight
                     increment_bring_bulk_count(self.config, kolli)
+                    if weight_kg > 0:
+                        increment_bring_bulk_weight(self.config, weight_kg)
                 except Exception as e:
-                    logger.warning(f"Kunde inte uppdatera bulk kolli-räknare: {e}")
+                    logger.warning(f"Kunde inte uppdatera bulk räknare: {e}")
 
         else:
             raise ValueError(
