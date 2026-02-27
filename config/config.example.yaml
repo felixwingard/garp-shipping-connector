@@ -9,6 +9,7 @@ paths:
   error_dir: "C:\\GARP\\Unifaun\\Error"        # Felfiler hamnar här
   log_dir: "C:\\GARP\\Logs"                    # Loggfiler
   label_cache_dir: "C:\\GARP\\Labels"          # Backup av etiketter (PDF)
+  bulk_exports_dir: "C:\\GARP\\BulkExports"    # Bring bulk Excel-backuper (vid Avsluta bulk)
   # GARP-följesedel: PDF med samma namn som ordernummer i watch_dir bifogas i kundmail.
   # T.ex. 107739-132888.pdf vid XML med orderno 107739-132888.
 

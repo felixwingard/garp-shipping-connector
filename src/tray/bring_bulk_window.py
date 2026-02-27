@@ -279,10 +279,17 @@ class BringBulkWindow(tk.Toplevel):
                 waybill_url="",
                 routing_url="",
                 orders=orders,
+                config=self.config,
             )
             clear_bulk_orders(bid)
         except Exception as e:
             logger.warning(f"Excel-backup vid avsluta bulk: {e}")
+            messagebox.showwarning(
+                "Excel kunde inte sparas",
+                f"Excel-backup kunde inte skapas:\n{e}\n\nKontrollera att bulk_exports_dir i config.yaml "
+                "pekar på en skrivbar mapp (t.ex. C:\\GARP\\BulkExports).",
+                parent=self,
+            )
         self._save_bulk_id("", reset_parcel_count=True)
         self._update_bulk_id_display()
         if self.on_bulk_id_reserved:

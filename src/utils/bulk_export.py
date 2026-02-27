@@ -27,7 +27,14 @@ def _orders_dir() -> Path:
     return d
 
 
-def _exports_dir() -> Path:
+def _exports_dir(config: Optional[dict] = None) -> Path:
+    """Returnerar bulk_exports-mapp. Använder paths.bulk_exports_dir om satt i config."""
+    if config:
+        p = config.get("paths", {}).get("bulk_exports_dir")
+        if p and str(p).strip():
+            d = Path(p).expanduser().resolve()
+            d.mkdir(parents=True, exist_ok=True)
+            return d
     d = get_base_dir() / _EXPORTS_DIR
     d.mkdir(parents=True, exist_ok=True)
     return d
@@ -187,6 +194,7 @@ def export_bulk_to_excel(
     waybill_url: str = "",
     routing_url: str = "",
     orders: Optional[list[dict[str, Any]]] = None,
+    config: Optional[dict] = None,
 ) -> Optional[Path]:
     """Skapar Excel-backup av bulk-sändningen. Returnerar sökväg till filen eller None vid fel."""
     try:
@@ -200,7 +208,7 @@ def export_bulk_to_excel(
     safe_bulk = bulk_id.replace("/", "-").replace("\\", "-").strip()
     datestr = datetime.now().strftime("%Y%m%d_%H%M")
     filename = f"Bring_Bulk_{safe_bulk}_{datestr}.xlsx"
-    filepath = _exports_dir() / filename
+    filepath = _exports_dir(config) / filename
 
     wb = Workbook()
 
@@ -254,6 +262,10 @@ def export_bulk_to_excel(
     for col in range(1, 11):
         ws2.column_dimensions[get_column_letter(col)].width = 18 if col <= 2 else 14
 
-    wb.save(filepath)
+    try:
+        wb.save(filepath)
+    except Exception as e:
+        logger.error(f"Kunde inte spara Excel till {filepath}: {e}")
+        raise
     logger.info(f"Bulk Excel-backup sparad: {filepath}")
     return filepath
