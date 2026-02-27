@@ -87,7 +87,6 @@ class BringBulkWindow(tk.Toplevel):
         self.bulk_id_var = tk.StringVar()
         bulk_entry = ttk.Entry(inner, textvariable=self.bulk_id_var, width=30, state="readonly")
         bulk_entry.pack(fill="x", pady=(4, 0))
-        self._update_bulk_id_display()
 
         ttk.Button(
             inner, text="Avsluta bulk (starta nytt nästa vecka)",
@@ -122,6 +121,8 @@ class BringBulkWindow(tk.Toplevel):
             main, text="Alla paket med BRING:0332 använder bulk-ID ovan.",
             font=(_font(), 8), fg="#94a3b8", bg="#fafafa",
         ).pack(anchor="w", pady=(0, 8))
+
+        self._update_bulk_id_display()
 
     def _load_terminals(self):
         bring = self.config.get("bring", {})
