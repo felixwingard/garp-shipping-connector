@@ -388,9 +388,9 @@ class BringBulkWindow(tk.Toplevel):
             messagebox.showinfo("Klar", msg, parent=self)
 
             if waybill_url or routing_url:
-                if messagebox.askyesno("Öppna dokument", "Vill du öppna CMR-waybill?", parent=self):
-                    _open_url(waybill_url or routing_url)
-                elif routing_url and messagebox.askyesno("Öppna dokument", "Öppna routing-labels?", parent=self):
+                if waybill_url and messagebox.askyesno("Öppna dokument", "Vill du öppna CMR-waybill?", parent=self):
+                    _open_url(waybill_url)
+                if routing_url and messagebox.askyesno("Öppna dokument", "Vill du öppna routing labels (fraksedlar)?", parent=self):
                     _open_url(routing_url)
 
             # Töm bulk-ID — nästa pall kräver ny reservation
