@@ -179,6 +179,12 @@ class TestParseSrvid:
         assert code == "104"
         assert addon == "AVIS"
 
+    def test_dhl_with_multiple_addons(self, parser):
+        carrier, code, addon = parser._parse_srvid("DHL:102:AVIS:LQ")
+        assert carrier == CarrierType.DHL
+        assert code == "102"
+        assert addon == "AVIS:LQ"
+
     def test_postnord(self, parser):
         carrier, code, addon = parser._parse_srvid("PN:19")
         assert carrier == CarrierType.POSTNORD

@@ -103,6 +103,23 @@ class StatusWindow(tk.Toplevel):
         self.tree.tag_configure("error", foreground="#dc2626")
         self.tree.tag_configure("info", foreground="#64748b")
 
+        # Felruta — visar senaste felmeddelandet
+        self._error_frame = tk.Frame(main, bg="#fafafa", highlightbackground="#e5e7eb", highlightthickness=1)
+        self._error_frame.pack(fill="x", pady=(8, 0))
+        self._error_label = tk.Label(
+            self._error_frame,
+            text="",
+            font=(_font(), 9),
+            fg="#64748b",
+            bg="#fafafa",
+            wraplength=550,
+            justify="left",
+            anchor="w",
+            padx=8,
+            pady=8,
+        )
+        self._error_label.pack(fill="x", expand=False)
+
         # Knappar
         btn_f = tk.Frame(main, bg="#fafafa")
         btn_f.pack(fill="x", pady=(12, 0))
@@ -147,6 +164,25 @@ class StatusWindow(tk.Toplevel):
         ok_count = sum(1 for e in history if e.get("event") == "shipment_ok")
         err_count = sum(1 for e in history if e.get("event") == "shipment_error")
         self._status_label.config(text=f"{len(history)} sändningar  ·  {ok_count} OK  ·  {err_count} fel")
+
+        # Visa senaste felmeddelande
+        last_error = None
+        for e in history:
+            if e.get("event") in ("shipment_error", "file_error") and e.get("error"):
+                last_error = e
+                break
+        if last_error:
+            order_or_file = last_error.get("order_no") or last_error.get("filename", "")
+            err_text = last_error.get("error", "")
+            self._error_label.config(
+                text=f"Senaste fel ({order_or_file}):\n{err_text}",
+                fg="#b91c1c",
+                bg="#fef2f2",
+            )
+            self._error_frame.config(bg="#fef2f2", highlightbackground="#fecaca")
+        else:
+            self._error_label.config(text="", fg="#64748b", bg="#fafafa")
+            self._error_frame.config(bg="#fafafa", highlightbackground="#e5e7eb")
 
     def _copy_errors_to_clipboard(self):
         """Kopierar senaste felen från loggfil till urklipp — för buggrapporter."""

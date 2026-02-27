@@ -151,6 +151,19 @@ class TestBuildTransportInstruction:
         payload = client._build_transport_instruction(sample_shipment)
         assert payload["additionalServices"]["notification"] is True
 
+    def test_additional_services_with_multiple_addons(self, client, sample_shipment):
+        """Flera addons (AVIS:LQ) ska ge både notification och dangerousGoods."""
+        sample_shipment.service.addon = "AVIS:LQ"
+        payload = client._build_transport_instruction(sample_shipment)
+        assert payload["additionalServices"]["notification"] is True
+        assert payload["additionalServices"]["dangerousGoods"] is True
+
+    def test_additional_services_lq_only(self, client, sample_shipment):
+        """LQ addon ska ge dangerousGoods."""
+        sample_shipment.service.addon = "LQ"
+        payload = client._build_transport_instruction(sample_shipment)
+        assert payload["additionalServices"]["dangerousGoods"] is True
+
     def test_pieces_id_is_string_array(self, client, sample_shipment):
         """pieces[].id ska vara string array ['']."""
         payload = client._build_transport_instruction(sample_shipment)
@@ -430,6 +443,11 @@ class TestAddonMapping:
             "insurance", "collectionAtTerminal", "nonStackable",
         }
         assert expected.issubset(set(ADDON_MAPPING.values()))
+
+    def test_dg_lq_danger_maps_to_dangerous_goods(self):
+        assert ADDON_MAPPING.get("DG") == "dangerousGoods"
+        assert ADDON_MAPPING.get("LQ") == "dangerousGoods"
+        assert ADDON_MAPPING.get("DANGER") == "dangerousGoods"
 
 
 class TestCleanPostalCode:

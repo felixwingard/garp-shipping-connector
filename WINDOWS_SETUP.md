@@ -123,6 +123,14 @@ python scripts\test_label.py --send-email
 
 ---
 
+## Farligt gods
+
+För sändningar med farligt gods: ADR-deklaration och Multimodal DG Form måste skickas till transportören enligt deras rutiner — connector skickar DG-info till API men genererar inte deklarationer.
+
+Se `docs/DANGEROUS_GOODS.md` för hur du anger LQ/DG via srvid och sidecar-fil för full ADR.
+
+---
+
 ## Felsökning
 
 | Problem | Lösning |

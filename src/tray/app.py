@@ -17,6 +17,8 @@ import tkinter as tk
 from pathlib import Path
 from typing import Optional
 
+from ..parsers.models import Shipment, DangerousGoodsInfo
+
 logger = logging.getLogger(__name__)
 
 # Status-ikonfärger
@@ -163,6 +165,13 @@ class TrayApp:
             self.quit()
         elif action == "shipment_event":
             self._on_shipment_event(msg.get("event_type"), msg.get("data", {}))
+        elif action == "request_dangerous_goods":
+            self._show_dangerous_goods_dialog(
+                msg.get("order_no", ""),
+                msg.get("filepath", ""),
+                msg.get("event"),
+                msg.get("result"),
+            )
 
     # ------------------------------------------------------------------
     # Tray-ikon (pystray)
@@ -266,6 +275,7 @@ class TrayApp:
             self.orchestrator = ShipmentOrchestrator(
                 self.config,
                 on_event=self._on_service_event,
+                get_dangerous_goods=self._get_dangerous_goods_callback,
             )
 
             watch_dir = self.config["paths"]["watch_dir"]
@@ -355,6 +365,44 @@ class TrayApp:
             self.config,
             on_bulk_id_reserved=self._on_bulk_id_reserved,
         )
+
+    def _get_dangerous_goods_callback(self, shipment: Shipment, filepath: Path) -> Optional[DangerousGoodsInfo]:
+        """Callback för orchestrator — blockerar tills användaren fyllt i DG-dialog."""
+        event = threading.Event()
+        result: list = [None]
+
+        self._queue.put({
+            "action": "request_dangerous_goods",
+            "order_no": shipment.order_no,
+            "filepath": str(filepath),
+            "event": event,
+            "result": result,
+        })
+        event.wait(timeout=600)
+        return result[0]
+
+    def _show_dangerous_goods_dialog(
+        self,
+        order_no: str,
+        filepath: str,
+        event: threading.Event,
+        result: list,
+    ):
+        """Visar DG-dialog (körs i tkinter-tråden)."""
+
+        def on_confirm(dg_info: Optional[DangerousGoodsInfo], save_sidecar: bool):
+            result[0] = dg_info
+            event.set()
+
+        from .dangerous_goods_dialog import DangerousGoodsDialog
+
+        dlg = DangerousGoodsDialog(
+            self.root,
+            order_no=order_no,
+            xml_filepath=filepath,
+            on_confirm=on_confirm,
+        )
+        dlg.wait_window()
 
     def _on_bulk_id_reserved(self, new_config: dict):
         """Callback när nytt bulk-ID reserverats."""

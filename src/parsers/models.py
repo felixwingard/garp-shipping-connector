@@ -49,6 +49,20 @@ class BookingInfo:
 
 
 @dataclass
+class DangerousGoodsInfo:
+    """Farligt gods (ADR) för sändning.
+
+    Används för full ADR-deklaration. Data hämtas från sidecar-fil (*_dg.json)
+    eller anges via UI-dialog. GARP exporterar inte DG-data i XML.
+    """
+    un_number: str = ""
+    adr_class: str = ""
+    packing_group: str = ""
+    technical_name: str = ""
+    flash_point: str = ""
+
+
+@dataclass
 class Notification:
     opt_id: str = ""
     message: str = ""
@@ -79,6 +93,7 @@ class Shipment:
     containers: list[Container] = field(default_factory=list)
     notifications: list[Notification] = field(default_factory=list)
     delivery_instruction: str = ""
+    dangerous_goods: Optional[DangerousGoodsInfo] = None
 
     # Fylls i efter API-anrop
     tracking_number: str = ""

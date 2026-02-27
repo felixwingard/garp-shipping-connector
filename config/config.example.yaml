@@ -49,6 +49,8 @@ dhl:
 #   api_key: "${BRING_API_KEY}"
 #   customer_number: "XXXXXX"
 #   consolidated_shipment_id: ""         # Bulk-ID från Mybring (när pall skapats). Uppdatera per batch.
+#   use_volume_for_lq: true              # volume > 0 = LQ för 0332/0342 (default). Sätt false för att stänga av.
+#   fetch_price_after_shipment: true     # Hämta pris (exkl. moms) efter bokning. Sätt false för att stänga av.
 #   social_control: true                 # Tilläggstjänst 1082 vid Pickup Parcel (0340/0342) — rekommenderas vid test
 #   test_mode: true
 #   timeout_seconds: 30
@@ -66,6 +68,8 @@ printers:
   # Endast dessa produktkoder skriver ut dokument (CMR för pall). Tom lista = aldrig skriv ut.
   # Exempel: [202, 210, 205] = Euroconnect, Pall, Euroline. Paket (102,103,109) = bara mailet.
   print_document_for_products: [202, 210, 205]
+  # ADR-godsdeklaration skrivs ut för farligt gods (DHL 210/211/202/205). Sätt false för att stänga av.
+  print_dg_declaration: true
   # SumatraPDF — sätt om auto-hitta misslyckas. Filen kan heta SumatraPDF.exe eller SumatraPDF-3.5.2-64.exe:
   # sumatra_exe: "C:\\GARP-Shipping\\garp-shipping-connector-main\\SumatraPDF-3.5.2-64.exe"
 

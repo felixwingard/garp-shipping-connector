@@ -12,6 +12,7 @@ Event-callbacks:
     - "file_error": {"filename", "error"}
 """
 
+import json
 import shutil
 import logging
 from pathlib import Path
@@ -19,7 +20,7 @@ from datetime import datetime
 from typing import Optional, Callable, List, Set, Tuple
 
 from .parsers.xml_parser import GarpXMLParser
-from .parsers.models import Shipment, CarrierType
+from .parsers.models import Shipment, CarrierType, DangerousGoodsInfo
 from .carriers.dhl import DHLClient
 from .carriers.bring import BringClient
 from .printing.printer import LabelPrinter
@@ -31,16 +32,25 @@ logger = logging.getLogger(__name__)
 class ShipmentOrchestrator:
     """Koordinerar hela flödet: XML → API → Utskrift → Mail → Flytt."""
 
-    def __init__(self, config: dict, on_event: Optional[Callable] = None):
+    def __init__(
+        self,
+        config: dict,
+        on_event: Optional[Callable] = None,
+        get_dangerous_goods: Optional[Callable[["Shipment", Path], Optional[DangerousGoodsInfo]]] = None,
+    ):
         """Initierar orchestrator.
 
         Args:
             config: Konfigurationsdict (från config.yaml).
             on_event: Callback-funktion för event-notifieringar till tray UI.
                       Signatur: on_event(event_type: str, data: dict)
+            get_dangerous_goods: Callback för att hämta DG-data via UI-dialog när
+                                sidecar saknas (endast DHL full ADR).
+                                Signatur: (shipment, filepath) -> DangerousGoodsInfo | None
         """
         self.config = config
         self.on_event = on_event
+        self.get_dangerous_goods = get_dangerous_goods
         self.skip_email = config.get("skip_email", False)
         self.parser = GarpXMLParser()
 
@@ -70,6 +80,52 @@ class ShipmentOrchestrator:
             except Exception as e:
                 logger.warning(f"Event-callback fel: {e}")
 
+    def _extract_error_message(self, e: Exception) -> str:
+        """Extraherar läsbart felmeddelande från API-svar (t.ex. DHL validationErrors)."""
+        msg = str(e)
+        resp = getattr(e, "response", None)
+        if resp is not None:
+            try:
+                body = resp.json()
+                vals = body.get("validationErrors", [])
+                if vals and isinstance(vals, list):
+                    first = vals[0]
+                    if isinstance(first, dict):
+                        m = first.get("message", msg)
+                        if m:
+                            return m
+                m = body.get("UserMessage") or body.get("Message")
+                if m:
+                    return m
+            except Exception:
+                pass
+        return msg
+
+    def _has_dg_addon(self, shipment: Shipment) -> bool:
+        """Kontrollerar om sändningen har farligt gods-addon (DG, LQ, DANGER)."""
+        addon = (shipment.service.addon or "").strip().upper().replace(",", ":")
+        parts = {p.strip() for p in addon.split(":") if p.strip()}
+        return bool(parts & {"DG", "LQ", "DANGER"})
+
+    def _load_dangerous_goods_sidecar(self, xml_filepath: Path) -> Optional[DangerousGoodsInfo]:
+        """Laddar DG-data från sidecar-fil {xml_stem}_dg.json om den finns."""
+        stem = xml_filepath.stem
+        dg_path = xml_filepath.parent / f"{stem}_dg.json"
+        if not dg_path.exists():
+            return None
+        try:
+            data = json.loads(dg_path.read_text(encoding="utf-8"))
+            return DangerousGoodsInfo(
+                un_number=str(data.get("unNumber", "")).strip(),
+                adr_class=str(data.get("adrClass", "")).strip(),
+                packing_group=str(data.get("packingGroup", "")).strip().upper(),
+                technical_name=str(data.get("technicalName", "")).strip(),
+                flash_point=str(data.get("flashPoint", "")).strip(),
+            )
+        except Exception as e:
+            logger.warning(f"Kunde inte ladda {dg_path.name}: {e}")
+            return None
+
     def process_file(self, filepath: Path) -> bool:
         """Bearbetar en XML-fil från GARP.
 
@@ -91,6 +147,36 @@ class ShipmentOrchestrator:
             logger.info(f"Parsade {len(shipments)} sändning(ar)")
 
             for shipment in shipments:
+                # Farligt gods: Bring = endast LQ (0003)
+                # DHL Paket (102, 103) stöder inte farligt gods — enligt DHL Produktmanual v5.23
+                if self._has_dg_addon(shipment) and shipment.service and shipment.service.carrier == CarrierType.DHL:
+                    pc = shipment.service.product_code or ""
+                    if pc in ("102", "103"):
+                        raise ValueError(
+                            f"Order {shipment.order_no}: DHL Paket (102/103) stöder inte farligt gods. "
+                            "Farligt gods kräver pall-/frakttjänst (t.ex. DHL Euroconnect). Kontakta DHL."
+                        )
+                    dg_info = self._load_dangerous_goods_sidecar(filepath)
+                    if dg_info and dg_info.un_number:
+                        shipment.dangerous_goods = dg_info
+                        logger.info(f"  Farligt gods: UN {dg_info.un_number}, klass {dg_info.adr_class}")
+                    elif self.get_dangerous_goods:
+                        dg_info = self.get_dangerous_goods(shipment, filepath)
+                        if dg_info and dg_info.un_number:
+                            shipment.dangerous_goods = dg_info
+                            logger.info(f"  Farligt gods (dialog): UN {dg_info.un_number}")
+                        else:
+                            raise ValueError(
+                                f"Order {shipment.order_no}: Farligt gods kräver UN-nummer. "
+                                "Ange i dialog eller skapa sidecar-fil (_dg.json)."
+                            )
+                    else:
+                        raise ValueError(
+                            f"Order {shipment.order_no}: Farligt gods kräver sidecar-fil (_dg.json) "
+                            "med UN-nummer och ADR-data. Se docs/DANGEROUS_GOODS.md."
+                        )
+
+            for shipment in shipments:
                 try:
                     self._process_single(shipment, xml_filepath=filepath)
                 except Exception as e:
@@ -98,9 +184,10 @@ class ShipmentOrchestrator:
                         f"Fel vid bearbetning av order {shipment.order_no}: {e}",
                         exc_info=True,
                     )
+                    error_msg = self._extract_error_message(e)
                     self._notify("shipment_error", {
                         "order_no": shipment.order_no,
-                        "error": str(e),
+                        "error": error_msg,
                     })
                     all_ok = False
 
@@ -235,6 +322,33 @@ class ShipmentOrchestrator:
                 pc = getattr(shipment.service, "product_code", "") if shipment.service else ""
                 logger.debug(f"  Dokument utskrivs ej för produkt {pc} (endast mail)")
 
+        # 4b. ADR-godsdeklaration för farligt gods (DHL freight 210/211/202/205)
+        dg = getattr(shipment, "dangerous_goods", None)
+        if (
+            dg
+            and dg.un_number
+            and carrier == CarrierType.DHL
+            and shipment.service
+            and str(shipment.service.product_code) in ("210", "211", "202", "205")
+        ):
+            print_dg = self.config.get("printers", {}).get("print_dg_declaration", True)
+            if print_dg:
+                try:
+                    from .printing.dg_declaration import generate_adr_declaration
+
+                    dg_pdf = generate_adr_declaration(
+                        shipment, dg, self.config["sender"]
+                    )
+                    dg_printed = self.printer.print_document(
+                        dg_pdf, "pdf", f"{shipment.order_no}_ADR"
+                    )
+                    if dg_printed:
+                        logger.info(f"  ADR-deklaration utskriven för order {shipment.order_no}")
+                    else:
+                        logger.warning(f"  ADR-deklaration utskrift misslyckades för {shipment.order_no}")
+                except Exception as e:
+                    logger.warning(f"  Kunde inte generera ADR-deklaration: {e}")
+
         # 5. Estimerat leveransdatum (DHL TimeTable API)
         estimated_delivery = ""
         estimated_price = ""
@@ -246,7 +360,7 @@ class ShipmentOrchestrator:
             except Exception as e:
                 logger.debug(f"  Kunde inte hämta leveransdatum: {e}")
 
-            # 5b. Uppskattat pris via PriceQuote (avtalspris för DK utrikes etc.)
+            # 5b. Uppskattat pris via PriceQuote (exkl. moms — TotalPrice)
             if self.config.get("dhl", {}).get("fetch_price_after_shipment", True):
                 try:
                     quote = self.dhl.get_price_quote(shipment, use_gross=False)
@@ -257,9 +371,20 @@ class ShipmentOrchestrator:
                         unit = total.get("unit", "SEK")
                         if val:
                             estimated_price = f"{val} {unit}"
-                            logger.info(f"  Uppskattat pris (avtalspris): {estimated_price}")
+                            logger.info(f"  Uppskattat pris (exkl. moms): {estimated_price}")
                 except Exception as e:
                     logger.debug(f"  Kunde inte hämta pris: {e}")
+        elif carrier == CarrierType.BRING and self.bring:
+            if self.config.get("bring", {}).get("fetch_price_after_shipment", True):
+                try:
+                    quote = self.bring.get_price_quote(shipment)
+                    amt = quote.get("amountWithoutVAT")
+                    curr = quote.get("currency", "SEK")
+                    if amt:
+                        estimated_price = f"{amt} {curr}"
+                        logger.info(f"  Uppskattat pris (exkl. moms): {estimated_price}")
+                except Exception as e:
+                    logger.debug(f"  Kunde inte hämta Bring-pris: {e}")
 
         # 6. Skicka kundmail (om e-post finns och enot-notifiering är aktiv)
         has_enot = any(n.opt_id == "enot" for n in shipment.notifications)

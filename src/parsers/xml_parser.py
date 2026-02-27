@@ -167,7 +167,8 @@ class GarpXMLParser:
 
         carrier_str = parts[0].strip().upper()
         product_code = parts[1].strip()
-        addon = parts[2].strip() if len(parts) > 2 else ""
+        # Flera addons: DHL:102:AVIS:LQ → addon = "AVIS:LQ"
+        addon = ":".join(p.strip() for p in parts[2:]) if len(parts) > 2 else ""
 
         try:
             carrier = CarrierType(carrier_str)

@@ -128,6 +128,44 @@ class TestBuildBookingPayload:
         ids = [s["id"] for s in payload["consignments"][0]["product"]["additionalServices"]]
         assert "0003" in ids
 
+    def test_volume_gt_zero_adds_lq_for_bring_0332(self, bring_client):
+        """GARP workaround: volume > 0 aktiverar LQ (additionalService 0003)."""
+        shipment = Shipment(
+            order_no="ORD-VOL",
+            receiver=Receiver(name="K", address1="A", zipcode="0150", city="Oslo", country="NO"),
+            service=ServiceInfo(carrier=CarrierType.BRING, product_code="0332", addon=""),
+            containers=[Container(weight=8.0, volume=4.0)],
+        )
+        payload = bring_client._build_booking_payload(shipment, "BUSINESS_PARCEL_BULK")
+        ids = [s["id"] for s in payload["consignments"][0]["product"]["additionalServices"]]
+        assert "0003" in ids
+
+    def test_volume_zero_no_lq(self, bring_client):
+        """volume=0 ger INGET LQ."""
+        shipment = Shipment(
+            order_no="ORD-NO-LQ",
+            receiver=Receiver(name="K", address1="A", zipcode="0150", city="Oslo", country="NO"),
+            service=ServiceInfo(carrier=CarrierType.BRING, product_code="0332", addon=""),
+            containers=[Container(weight=16.0, volume=0.0)],
+        )
+        payload = bring_client._build_booking_payload(shipment, "BUSINESS_PARCEL_BULK")
+        ids = [s["id"] for s in payload["consignments"][0]["product"]["additionalServices"]]
+        assert "0003" not in ids
+
+    def test_use_volume_for_lq_false_disables_volume_lq(self, bring_client):
+        """use_volume_for_lq: false → volume påverkar inte LQ (endast 0332/0342)."""
+        config = {**BRING_CONFIG, "use_volume_for_lq": False}
+        client = BringClient(config, SENDER)
+        shipment = Shipment(
+            order_no="ORD-VOL-OFF",
+            receiver=Receiver(name="K", address1="A", zipcode="0150", city="Oslo", country="NO"),
+            service=ServiceInfo(carrier=CarrierType.BRING, product_code="0332", addon=""),
+            containers=[Container(weight=8.0, volume=4.0)],
+        )
+        payload = client._build_booking_payload(shipment, "BUSINESS_PARCEL_BULK")
+        ids = [s["id"] for s in payload["consignments"][0]["product"]["additionalServices"]]
+        assert "0003" not in ids
+
     def test_bulk_id_and_lq_combined(self, bring_client):
         """Addon kan kombinera bulk-ID och LQ: BRING:0332:CS123:LQ."""
         config_no_bulk = {**BRING_CONFIG, "consolidated_shipment_id": ""}

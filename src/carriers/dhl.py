@@ -52,6 +52,7 @@ API_PATHS = {
 
 # Mappning av tilläggstjänster (addon-kod i srvid -> DHL API-kod)
 # Värdet skickas som {api_kod: True} i additionalServices
+# Flera addons i srvid: DHL:102:AVIS:LQ → både notification och dangerousGoods
 ADDON_MAPPING = {
     "notification": "notification",
     "AVIS": "notification",
@@ -60,6 +61,9 @@ ADDON_MAPPING = {
     "tailLiftLoading": "tailLiftLoading",
     "indoorDelivery": "indoorDelivery",
     "dangerousGoods": "dangerousGoods",
+    "DG": "dangerousGoods",
+    "LQ": "dangerousGoods",
+    "DANGER": "dangerousGoods",
     "insurance": "insurance",
     "collectionAtTerminal": "collectionAtTerminal",
     "nonStackable": "nonStackable",
@@ -1063,14 +1067,35 @@ class DHLClient(CarrierClient):
         if container and container.height > 0:
             pieces[0]["height"] = container.height
 
+        # Farligt gods: full ADR-info i piece om vi har DangerousGoodsInfo
+        # DHL Paket 102/103 stöder inte farligt gods
+        dg = getattr(shipment, "dangerous_goods", None)
+        if dg and dg.un_number and product_code not in ("102", "103"):
+            dg_obj = {
+                "unNumber": dg.un_number,
+                "adrClass": dg.adr_class or "",
+                "packingGroup": dg.packing_group or "",
+                "technicalName": dg.technical_name or "",
+            }
+            if dg.flash_point:
+                dg_obj["flashPoint"] = dg.flash_point
+            pieces[0]["dangerousGoods"] = dg_obj
+
         # additionalServices: objekt med bool-värden
         # {"notification": true} — INTE {"notification": {}}
+        # Flera addons: DHL:102:AVIS:LQ → addon="AVIS:LQ", splittar på ":"
+        # DHL Paket 102/103 stöder inte farligt gods — skippa dangerousGoods
         additional_services = {}
         if shipment.service.addon:
-            addon_code = ADDON_MAPPING.get(
-                shipment.service.addon, shipment.service.addon
-            )
-            additional_services[addon_code] = True
+            for part in shipment.service.addon.replace(",", ":").split(":"):
+                part = part.strip().upper()
+                if not part:
+                    continue
+                api_code = ADDON_MAPPING.get(part)
+                if api_code:
+                    if api_code == "dangerousGoods" and product_code in ("102", "103"):
+                        continue  # Paket 102/103 stöder ej farligt gods
+                    additional_services[api_code] = True
 
         payload = {
             "id": "",

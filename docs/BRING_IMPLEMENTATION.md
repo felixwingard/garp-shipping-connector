@@ -20,7 +20,22 @@ Ange via srvid: `BRING:0340:SOCIAL` eller `BRING:0342:SOCIAL`
 
 ## Begränsade kvantiteter (LQ / ADR)
 
-För sändningar med begränsad mängd farligt gods, lägg till `LQ` i addon:
+För sändningar med begränsad mängd farligt gods — **ett leveranssätt räcker**.
+
+### GARP workaround: volume-fältet
+
+**Endast för BRING:0332 och BRING:0342** (Bring Norge — de enda tjänster ni skickar LQ med till Norge).
+
+GARP har inte LQ som standardfält. Använd **volume** i containern:
+
+| volume i GARP | Effekt |
+|---------------|--------|
+| 4 (eller 4.00) | LQ — additionalService 0003 skickas till Bring |
+| 0 eller 0.00 | Ej LQ |
+
+T.ex. `val n="volume">4.00</val>` → Bring får LQ. Samma srvid BRING:0332 används för både LQ och icke-LQ. Konfiguration: `bring.use_volume_for_lq: true` (default). Sätt till `false` för att stänga av.
+
+### Alternativ: srvid addon
 
 | srvid i GARP | Effekt |
 |--------------|--------|
@@ -29,6 +44,10 @@ För sändningar med begränsad mängd farligt gods, lägg till `LQ` i addon:
 | BRING:0332:CS123:LQ | Bulk-ID CS123 + begränsad mängd |
 
 Obs: Multimodal Dangerous Goods Form måste skickas till Bring före transport.
+
+### Full ADR
+
+Bring Booking API stöder endast LQ (0003) via API. För full ADR med UN-nummer etc. krävs Multimodal Dangerous Goods Form skickat till Bring enligt deras rutiner — detta hanteras manuellt utanför connector. Se [DANGEROUS_GOODS.md](DANGEROUS_GOODS.md).
 
 ## Konfiguration
 

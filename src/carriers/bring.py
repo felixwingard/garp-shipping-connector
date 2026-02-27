@@ -153,6 +153,104 @@ class BringClient(CarrierClient):
             "Bring: Anropa create_shipment först — den returnerar label."
         )
 
+    def get_price_quote(self, shipment: Shipment) -> dict:
+        """Hämtar prisuppskattning via Shipping Guide API (exkl. moms).
+
+        Returns:
+            Dict med amountWithoutVAT, currency, eller tom dict vid fel.
+        """
+        from datetime import datetime, timezone
+
+        product_id = BRING_SERVICES.get(
+            (shipment.service.product_code or "").upper(),
+            shipment.service.product_code,
+        )
+        if not product_id or not shipment.receiver:
+            return {}
+
+        recv = shipment.receiver
+        container = shipment.containers[0] if shipment.containers else None
+        weight_g = int((container.weight if container else 1.0) * 1000)
+        weight_g = max(1000, min(weight_g, 31500))
+        length = int(container.length) if container and container.length > 0 else 40
+        width = int(container.width) if container and container.width > 0 else 30
+        height = int(container.height) if container and container.height > 0 else 20
+        length, width, height = max(1, length), max(1, width), max(1, height)
+
+        from_postal = (self.sender.get("zipcode", "") or "43133").replace(" ", "")
+        to_postal = _clean_postal(recv.zipcode or "").replace(" ", "")
+        from_country = self.sender.get("country", "SE")
+        to_country = recv.country or "NO"
+
+        now = datetime.now(timezone.utc)
+        payload = {
+            "language": "no",
+            "withPrice": True,
+            "withExpectedDelivery": False,
+            "withGuiInformation": False,
+            "edi": True,
+            "postingAtPostOffice": False,
+            "consignments": [
+                {
+                    "id": 1,
+                    "products": [
+                        {"id": product_id, "customerNumber": self.customer_number}
+                        if self.customer_number
+                        else {"id": product_id},
+                    ],
+                    "fromCountryCode": from_country,
+                    "toCountryCode": to_country,
+                    "fromPostalCode": from_postal,
+                    "toPostalCode": to_postal,
+                    "addressLine": recv.address1 or "",
+                    "shippingDate": {
+                        "day": str(now.day),
+                        "hour": str(now.hour),
+                        "minute": str(now.minute),
+                        "month": str(now.month),
+                        "year": str(now.year),
+                    },
+                    "packages": [
+                        {
+                            "id": "1",
+                            "length": length,
+                            "width": width,
+                            "height": height,
+                            "grossWeight": weight_g,
+                        }
+                    ],
+                }
+            ],
+        }
+
+        url = "https://api.bring.com/shippingguide/api/v2/products"
+        headers = {"Content-Type": "application/json", "X-Bring-Client-URL": "https://ernstp.se"}
+        if self.test_mode:
+            headers["X-Bring-Test-Indicator"] = "true"
+
+        try:
+            resp = self.session.post(url, json=payload, timeout=self.timeout, headers=headers)
+            resp.raise_for_status()
+        except Exception as e:
+            logger.debug(f"Bring Shipping Guide: {e}")
+            return {}
+
+        data = resp.json()
+        for cons in data.get("consignments", []):
+            for prod in cons.get("products", []):
+                if prod.get("id") != product_id:
+                    continue
+                price_info = prod.get("price", {})
+                source = price_info.get("netPrice") or price_info.get("listPrice", {})
+                pwa = source.get("priceWithAdditionalServices") or source.get(
+                    "priceWithoutAdditionalServices", {}
+                )
+                amt = pwa.get("amountWithoutVAT") or pwa.get("amountWithVAT")
+                curr = source.get("currencyCode", "SEK")
+                if amt:
+                    return {"amountWithoutVAT": str(amt), "currency": curr}
+        return {}
+
     def _fetch_label(self, cons: dict, confirmation: dict = None) -> bytes:
         """Hämtar etikett från consignment-svar (base64 eller URL)."""
         conf = confirmation or {}
@@ -276,6 +374,9 @@ def _parse_additional_services(shipment: Shipment, config: Optional[dict] = None
       BRING:0342:SOCIAL  → social kontroll (1082) — för Pickup Parcel (0340/0342)
     Config: bring.social_control: true → lägger till 1082 på Pickup Parcel (0340/0342).
     OBS: 1082 stöds för Pickup Parcel, INTE för 0332 Business Parcel Bulk.
+
+    GARP workaround: volume > 0 = LQ — endast för BRING:0332/0342 (Bring Norge).
+    Gäller inte 0330/0340 eller andra transportörer. Config: bring.use_volume_for_lq (default True).
     """
     services = []
     addon = (shipment.service.addon or "").strip()
@@ -288,6 +389,14 @@ def _parse_additional_services(shipment: Shipment, config: Optional[dict] = None
             if prod not in ("0332", "BUSINESS_PARCEL_BULK"):
                 services.append("1082")
     bring_cfg = (config or {}).get("bring", {}) if config else {}
+    # GARP workaround: volume > 0 = LQ — ENDAST Bring Norge 0332/0342 (de enda vi skickar LQ med till Norge)
+    use_volume_for_lq = bring_cfg.get("use_volume_for_lq", True)
+    if use_volume_for_lq and prod in ("0332", "0342", "BUSINESS_PARCEL_BULK", "PICKUP_PARCEL_BULK"):
+        for c in shipment.containers or []:
+            if c and float(getattr(c, "volume", 0) or 0) > 0:
+                if "0003" not in services:
+                    services.append("0003")
+                break
     if bring_cfg.get("social_control", False) and "1082" not in services:
         # Endast för Pickup Parcel (0340, 0342)
         if prod in ("0340", "0342", "PICKUP_PARCEL", "PICKUP_PARCEL_BULK"):
