@@ -32,6 +32,10 @@ Thumbs.db
 # Pytest
 .pytest_cache/
 
+# Bring bulk — runtime data
+bulk_orders.json
+bulk_exports/
+
 # Etiketter (lokala testfiler)
 *.pdf
 test_labels/

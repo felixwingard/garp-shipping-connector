@@ -382,9 +382,40 @@ class BringBulkWindow(tk.Toplevel):
             waybill_url = result.get("waybillUrl", "")
             routing_url = result.get("routingLabelsUrl", "")
 
+            # Excel-backup av bulk (ordrar + sammanfattning)
+            excel_saved = None
+            try:
+                from ..utils.bulk_export import (
+                    export_bulk_to_excel,
+                    get_bulk_orders,
+                    clear_bulk_orders,
+                )
+                orders = get_bulk_orders(bulk_id)
+                excel_path = export_bulk_to_excel(
+                    bulk_id=bulk_id,
+                    total_weight_kg=weight,
+                    num_packages=num_packages or 0,
+                    num_pallets=num_pallets,
+                    num_direct_pallets=num_direct,
+                    direct_pallets_weight_kg=direct_weight,
+                    num_invoices=num_invoices_val if num_invoices_val > 0 else 3,
+                    waybill_url=waybill_url,
+                    routing_url=routing_url,
+                    orders=orders,
+                )
+                excel_saved = excel_path
+                if excel_path:
+                    logger.info(f"Bulk Excel-backup: {excel_path}")
+                clear_bulk_orders(bulk_id)
+            except Exception as e:
+                logger.warning(f"Excel-backup misslyckades: {e}")
+                excel_saved = None
+
             total_p = num_pallets + num_direct
             pall_txt = f"{total_p} pallar" if total_p != 1 else "Pall"
             msg = f"{pall_txt} registrerad(e): {bulk_id}"
+            if excel_saved:
+                msg += f"\n\nExcel-backup sparad: {excel_saved}"
             if waybill_url or routing_url:
                 msg += "\n\nÖppna CMR/routing i webbläsare?"
             messagebox.showinfo("Klar", msg, parent=self)

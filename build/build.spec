@@ -36,6 +36,7 @@ a = Analysis(
         'PIL',
         'PIL.Image',
         'PIL.ImageDraw',
+        'openpyxl',
     ],
     hookspath=[],
     hooksconfig={},

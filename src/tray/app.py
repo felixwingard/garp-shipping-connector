@@ -370,6 +370,15 @@ class TrayApp:
         if self._status_window and self._status_window.winfo_exists():
             self._status_window.refresh(self.shipment_history)
 
+        # När Bring bulk bokats: uppdatera kolli/vikt i Bring Bulk-fönstret
+        if (
+            event_type == "shipment_ok"
+            and data.get("carrier") == "bring"
+            and self._bring_bulk_window
+            and self._bring_bulk_window.winfo_exists()
+        ):
+            self._bring_bulk_window._update_parcel_count_display()
+
     # ------------------------------------------------------------------
     # Fönster
     # ------------------------------------------------------------------

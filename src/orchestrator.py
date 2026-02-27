@@ -282,11 +282,15 @@ class ShipmentOrchestrator:
             if prod in ("0332", "0342", "BUSINESS_PARCEL_BULK", "PICKUP_PARCEL_BULK"):
                 kolli = sum(c.copies for c in shipment.containers) if shipment.containers else 1
                 weight_kg = sum((c.weight or 0) * c.copies for c in shipment.containers) if shipment.containers else 0
+                bulk_id = (self.config.get("bring") or {}).get("consolidated_shipment_id", "").strip()
                 try:
                     from .utils.config import increment_bring_bulk_count, increment_bring_bulk_weight
                     increment_bring_bulk_count(self.config, kolli)
                     if weight_kg > 0:
                         increment_bring_bulk_weight(self.config, weight_kg)
+                    if bulk_id:
+                        from .utils.bulk_export import append_bring_bulk_order
+                        append_bring_bulk_order(bulk_id, shipment.order_no, tracking, weight_kg, kolli)
                 except Exception as e:
                     logger.warning(f"Kunde inte uppdatera bulk räknare: {e}")
 
