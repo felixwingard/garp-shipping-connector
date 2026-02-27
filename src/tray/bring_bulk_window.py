@@ -67,12 +67,15 @@ class BringBulkWindow(tk.Toplevel):
         inner.pack(fill="x")
 
         tk.Label(inner, text="Terminal (Norge)", font=(_font(), 9), fg="#64748b", bg="white", width=14, anchor="w").pack(anchor="w")
+        term_row = tk.Frame(inner, bg="white")
+        term_row.pack(fill="x", pady=(0, 4))
         self.terminal_var = tk.StringVar()
         self.terminal_combo = ttk.Combobox(
-            inner, textvariable=self.terminal_var,
-            width=36, state="readonly"
+            term_row, textvariable=self.terminal_var,
+            width=30, state="readonly"
         )
-        self.terminal_combo.pack(fill="x", pady=(0, 8))
+        self.terminal_combo.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(term_row, text="Ladda om", width=8, command=self._load_terminals).pack(side="right")
 
         self.reserve_btn = ttk.Button(
             inner, text="Reservera nummer",
