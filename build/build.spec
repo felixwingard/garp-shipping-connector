@@ -14,6 +14,7 @@ a = Analysis(
     datas=[
         ('../config/config.example.yaml', 'config'),
     ],
+    packages=['openpyxl'],  # Inkludera openpyxl helt för Excel-export
     hiddenimports=[
         'src',
         'src.main',

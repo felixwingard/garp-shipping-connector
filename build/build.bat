@@ -24,7 +24,8 @@ if errorlevel 1 (
     set PYTHON=py
 )
 
-echo  [1/3] Installerar PyInstaller...
+echo  [1/3] Installerar beroenden (inkl. openpyxl) + PyInstaller...
+%PYTHON% -m pip install -r requirements.txt --quiet 2>nul
 %PYTHON% -m pip install pyinstaller pywin32 --quiet
 echo.
 

@@ -30,7 +30,7 @@ if errorlevel 1 (
 if "%PYTHON%"=="py" (set PYTHONW=pyw) else (set PYTHONW=pythonw)
 
 echo  [1/4] Installerar Python-paket...
-%PYTHON% -m pip install requests watchdog pyyaml pywin32 pystray Pillow >nul 2>&1
+%PYTHON% -m pip install requests watchdog pyyaml pywin32 pystray Pillow openpyxl >nul 2>&1
 echo         Klart!
 echo.
 
