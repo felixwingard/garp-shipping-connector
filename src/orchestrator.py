@@ -290,7 +290,19 @@ class ShipmentOrchestrator:
                         increment_bring_bulk_weight(self.config, weight_kg)
                     if bulk_id:
                         from .utils.bulk_export import append_bring_bulk_order
-                        append_bring_bulk_order(bulk_id, shipment.order_no, tracking, weight_kg, kolli)
+                        rec = shipment.receiver
+                        append_bring_bulk_order(
+                            bulk_id,
+                            shipment.order_no,
+                            tracking,
+                            weight_kg,
+                            kolli,
+                            receiver_name=rec.name if rec else "",
+                            receiver_address=((rec.address1 or "") + (" " + rec.address2 if rec and rec.address2 else "")).strip() if rec else "",
+                            receiver_zipcode=rec.zipcode if rec else "",
+                            receiver_city=rec.city if rec else "",
+                            receiver_country=rec.country if rec else "",
+                        )
                 except Exception as e:
                     logger.warning(f"Kunde inte uppdatera bulk räknare: {e}")
 

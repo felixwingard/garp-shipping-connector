@@ -176,6 +176,7 @@ class BringBulkWindow(tk.Toplevel):
         ).pack(anchor="w", pady=(0, 8))
 
         self._update_bulk_id_display()
+        self._schedule_parcel_refresh()
 
     def _load_terminals(self):
         bring = self.config.get("bring", {})
@@ -212,28 +213,84 @@ class BringBulkWindow(tk.Toplevel):
         self._update_parcel_count_display()
 
     def _update_parcel_count_display(self):
-        """Uppdaterar antal kolli och totalvikt från config (räknas vid varje bokning)."""
+        """Uppdaterar antal kolli och totalvikt. Prioritet: 1) Excel (bulk_orders) 2) config.yaml."""
         if not hasattr(self, "num_packages_var") or not hasattr(self, "weight_var"):
             return
-        bring = self.config.get("bring", {})
-        count = bring.get("bulk_parcel_count", 0)
+        bulk_id = self.config.get("bring", {}).get("consolidated_shipment_id", "").strip()
+        count, weight = None, None
+        # Läs från bulk-Excel först (källan för totalvikt och antal kolli)
+        if bulk_id:
+            try:
+                from ..utils.bulk_export import get_bulk_totals
+                totals = get_bulk_totals(bulk_id)
+                if totals.get("num_packages") or totals.get("total_weight_kg"):
+                    count = int(totals.get("num_packages", 0))
+                    weight = float(totals.get("total_weight_kg", 0))
+            except Exception:
+                pass
+        # Fallback till config om Excel saknar data
+        if count is None or weight is None:
+            try:
+                from ..utils.config import get_config_path
+                import yaml
+                path = get_config_path()
+                if path.exists():
+                    with open(path, "r", encoding="utf-8") as f:
+                        cfg = yaml.safe_load(f) or {}
+                    bring = cfg.get("bring", {})
+                    if count is None:
+                        count = bring.get("bulk_parcel_count", 0)
+                    if weight is None:
+                        weight = float(bring.get("bulk_total_weight_kg", 0) or 0)
+            except Exception:
+                pass
         self.num_packages_var.set(str(count) if count else "")
-        weight = bring.get("bulk_total_weight_kg", 0) or 0
         self.weight_var.set(str(int(weight)) if weight else "")
 
+    def _schedule_parcel_refresh(self):
+        """Startar periodisk uppdatering av kolli/vikt (var 3:e sekund)."""
+        if not self.winfo_exists():
+            return
+        self._update_parcel_count_display()
+        self.after(3000, self._schedule_parcel_refresh)
+
     def _do_clear_bulk(self):
-        """Avslutar aktuellt bulk-ID så att nästa vecka kan starta nytt."""
+        """Avslutar aktuellt bulk-ID — skapar Excel-backup och nollställer för nästa vecka."""
         bid = self.config.get("bring", {}).get("consolidated_shipment_id", "").strip()
         if not bid:
             messagebox.showinfo("Info", "Inget bulk-ID är reserverat.", parent=self)
             return
-        if not messagebox.askyesno("Avsluta bulk", f"Avsluta bulk-ID {bid}?\nNästa vecka kan du reservera nytt bulk.", parent=self):
+        if not messagebox.askyesno("Avsluta bulk", f"Avsluta bulk-ID {bid}?\nExcel-backup skapas i bulk_exports/. Nästa vecka kan du reservera nytt bulk.", parent=self):
             return
+        # Skapa Excel-backup (en fil per bulk) innan avslut
+        excel_path = None
+        try:
+            from ..utils.bulk_export import export_bulk_to_excel, get_bulk_orders, get_bulk_totals, clear_bulk_orders
+            orders = get_bulk_orders(bid)
+            totals = get_bulk_totals(bid)
+            excel_path = export_bulk_to_excel(
+                bulk_id=bid,
+                total_weight_kg=int(totals.get("total_weight_kg", 0)),
+                num_packages=int(totals.get("num_packages", 0)),
+                num_pallets=1,
+                num_direct_pallets=0,
+                direct_pallets_weight_kg=0,
+                num_invoices=3,
+                waybill_url="",
+                routing_url="",
+                orders=orders,
+            )
+            clear_bulk_orders(bid)
+        except Exception as e:
+            logger.warning(f"Excel-backup vid avsluta bulk: {e}")
         self._save_bulk_id("", reset_parcel_count=True)
         self._update_bulk_id_display()
         if self.on_bulk_id_reserved:
             self.on_bulk_id_reserved(self.config)
-        messagebox.showinfo("Klar", "Bulk avslutat. Reservera nytt bulk-ID när du ska skicka nästa gång.", parent=self)
+        msg = "Bulk avslutat. Reservera nytt bulk-ID när du ska skicka nästa gång."
+        if excel_path:
+            msg += f"\n\nExcel-backup sparad: {excel_path}"
+        messagebox.showinfo("Klar", msg, parent=self)
 
     def _save_bulk_id(self, bulk_id: str, reset_parcel_count: bool = False):
         """Sparar bulk-ID till config.yaml. Om reset_parcel_count: nollställ kolli-räknaren."""
@@ -322,7 +379,12 @@ class BringBulkWindow(tk.Toplevel):
             except ValueError:
                 pass
         if num_packages is None:
-            num_packages = self.config.get("bring", {}).get("bulk_parcel_count")
+            try:
+                from ..utils.bulk_export import get_bulk_totals
+                totals = get_bulk_totals(bulk_id)
+                num_packages = totals.get("num_packages", 0)
+            except Exception:
+                num_packages = self.config.get("bring", {}).get("bulk_parcel_count", 0)
 
         num_pallets = 1
         npal_str = (self.num_pallets_var.get() or "1").strip()
@@ -382,40 +444,9 @@ class BringBulkWindow(tk.Toplevel):
             waybill_url = result.get("waybillUrl", "")
             routing_url = result.get("routingLabelsUrl", "")
 
-            # Excel-backup av bulk (ordrar + sammanfattning)
-            excel_saved = None
-            try:
-                from ..utils.bulk_export import (
-                    export_bulk_to_excel,
-                    get_bulk_orders,
-                    clear_bulk_orders,
-                )
-                orders = get_bulk_orders(bulk_id)
-                excel_path = export_bulk_to_excel(
-                    bulk_id=bulk_id,
-                    total_weight_kg=weight,
-                    num_packages=num_packages or 0,
-                    num_pallets=num_pallets,
-                    num_direct_pallets=num_direct,
-                    direct_pallets_weight_kg=direct_weight,
-                    num_invoices=num_invoices_val if num_invoices_val > 0 else 3,
-                    waybill_url=waybill_url,
-                    routing_url=routing_url,
-                    orders=orders,
-                )
-                excel_saved = excel_path
-                if excel_path:
-                    logger.info(f"Bulk Excel-backup: {excel_path}")
-                clear_bulk_orders(bulk_id)
-            except Exception as e:
-                logger.warning(f"Excel-backup misslyckades: {e}")
-                excel_saved = None
-
             total_p = num_pallets + num_direct
             pall_txt = f"{total_p} pallar" if total_p != 1 else "Pall"
             msg = f"{pall_txt} registrerad(e): {bulk_id}"
-            if excel_saved:
-                msg += f"\n\nExcel-backup sparad: {excel_saved}"
             if waybill_url or routing_url:
                 msg += "\n\nÖppna CMR/routing i webbläsare?"
             messagebox.showinfo("Klar", msg, parent=self)
@@ -426,10 +457,7 @@ class BringBulkWindow(tk.Toplevel):
                 if routing_url and messagebox.askyesno("Öppna dokument", "Vill du öppna routing labels (fraksedlar)?", parent=self):
                     _open_url(routing_url)
 
-            # Töm bulk-ID — nästa pall kräver ny reservation
-            self.config["bring"]["consolidated_shipment_id"] = ""
-            self._update_bulk_id_display()
-            self._save_bulk_id("", reset_parcel_count=True)
+            # Behåll bulk-ID tills användaren trycker "Avsluta bulk" (då skapas Excel-backup)
         except Exception as e:
             logger.error(f"Bring register fel: {e}", exc_info=True)
             messagebox.showerror("Fel", str(e), parent=self)

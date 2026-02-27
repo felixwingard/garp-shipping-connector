@@ -33,7 +33,7 @@ Thumbs.db
 .pytest_cache/
 
 # Bring bulk — runtime data
-bulk_orders.json
+bulk_orders/
 bulk_exports/
 
 # Etiketter (lokala testfiler)
