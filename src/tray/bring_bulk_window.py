@@ -285,7 +285,7 @@ class BringBulkWindow(tk.Toplevel):
                 messagebox.showwarning(
                     "Excel kunde inte skapas",
                     "openpyxl saknas eller kunde inte ladda. "
-                    "Excel-backup skapas ej. Installera: pip install openpyxl",
+                    "Excel-backup skapas ej. Bygg om programmet (pyinstaller) för att inkludera openpyxl.",
                     parent=self,
                 )
             clear_bulk_orders(bid)
