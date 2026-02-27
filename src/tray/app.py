@@ -8,9 +8,11 @@ Arkitektur med 3 trådar:
 Kommunikation: pystray → queue → tkinter (trådsäkert)
 """
 
+import os
+import queue
+import socket
 import sys
 import time
-import queue
 import logging
 import threading
 import tkinter as tk
@@ -20,6 +22,9 @@ from typing import Optional
 from ..parsers.models import Shipment, DangerousGoodsInfo
 
 logger = logging.getLogger(__name__)
+
+# Port för single-instance lock (bara en instans får köra)
+_SINGLE_INSTANCE_PORT = 38473
 
 # Status-ikonfärger
 STATUS_IDLE = "idle"         # Grön — väntar på filer
@@ -41,6 +46,7 @@ class TrayApp:
         self.orchestrator = None
         self.watcher = None
         self.tray_icon = None
+        self._instance_socket = None
         self.status = STATUS_IDLE
 
         # Queue för trådsäker kommunikation: pystray/service → tkinter
@@ -59,16 +65,37 @@ class TrayApp:
         self.shipment_history: list[dict] = []
         self.max_history = 50
 
+    def _acquire_single_instance(self) -> bool:
+        """Försöker binda port för att förhindra flera instanser. Returnerar True om OK."""
+        try:
+            self._instance_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._instance_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._instance_socket.bind(("127.0.0.1", _SINGLE_INSTANCE_PORT))
+            return True
+        except OSError:
+            logger.warning("En annan instans av GARP Shipping Connector kör redan")
+            return False
+
     def run(self):
         """Startar appen — blockerar tills avslut.
 
-        1. Laddar config
-        2. Sätter upp logging
-        3. Skapar tkinter root (withdrawn)
-        4. Startar pystray i daemon-tråd
-        5. Startar service i daemon-tråd
-        6. Kör tkinter mainloop
+        1. Kontrollera single instance
+        2. Ladda config
+        3. Sätt upp logging
+        4. Skapa tkinter root (withdrawn)
+        5. Starta pystray i daemon-tråd
+        6. Starta service i daemon-tråd
+        7. Kör tkinter mainloop
         """
+        if not self._acquire_single_instance():
+            try:
+                _r = tk.Tk()
+                _r.withdraw()
+                from tkinter import messagebox
+                messagebox.showinfo("GARP Shipping Connector", "En annan instans kör redan.")
+            except Exception:
+                pass
+            return
         # 1. Ladda config + logging
         self._load_config()
         self._setup_logging()
@@ -116,21 +143,30 @@ class TrayApp:
             except Exception:
                 pass
 
-        # Stoppa tray-ikon
+        # Stoppa tray-ikon (först så den försvinner från systemfältet)
         if self._icon:
             try:
                 self._icon.stop()
             except Exception:
                 pass
 
+        # Stäng instance-socket (frigör port för nästa start)
+        if getattr(self, "_instance_socket", None):
+            try:
+                self._instance_socket.close()
+            except Exception:
+                pass
+
         # Stäng tkinter
         try:
-            self.root.quit()
-            self.root.destroy()
+            if self.root.winfo_exists():
+                self.root.quit()
+                self.root.destroy()
         except Exception:
             pass
 
         logger.info("Avslutad")
+        os._exit(0)  # Tvinga processavslut — undvik kvarvarande zombier
 
     # ------------------------------------------------------------------
     # Queue-bro (pystray → tkinter)
