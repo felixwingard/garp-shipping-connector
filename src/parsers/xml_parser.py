@@ -94,8 +94,16 @@ class GarpXMLParser:
             addr1 = f"{addr1}, {addr2}"  # Båda har innehåll → kombinerat som street
             addr2 = ""
         country = vals.get("country", "").strip()
-        zipcode = vals.get("zipcode", "").strip().upper()
-        # GARP kan lämna country tomt — gissa från postnummer (N-0582 = Norge, 0582 = 4 siffror)
+        zipcode_raw = vals.get("zipcode", "").strip()
+        zipcode = zipcode_raw.replace(" ", "").upper()
+        city = (vals.get("city", "") or "").strip()
+        # GARP kolumnfel: zipcode "0582 O", city "SLO" — flytta O tillbaka till city → OSLO
+        if re.match(r"^\d{4}\s+[A-Za-z]$", zipcode_raw):
+            letter = zipcode_raw[-1].upper()
+            city = (letter + city.lstrip()).strip() if city else letter
+            zipcode_raw = zipcode_raw[:4].strip()
+            zipcode = zipcode_raw
+        # GARP kan lämna country tomt — gissa från postnummer (N-0582 = Norge, 4 siffror)
         z = zipcode.replace(" ", "")
         if not country and (zipcode.startswith("N-") or (len(z) == 4 and z.isdigit())):
             country = "NO"
@@ -104,8 +112,8 @@ class GarpXMLParser:
             name=vals.get("name", ""),
             address1=addr1,
             address2=addr2,
-            zipcode=vals.get("zipcode", ""),
-            city=vals.get("city", ""),
+            zipcode=zipcode_raw,
+            city=city,
             country=country,
             phone=vals.get("phone", ""),
             email=vals.get("email", ""),

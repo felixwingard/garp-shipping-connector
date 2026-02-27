@@ -274,3 +274,8 @@ class TestCleanPostal:
         """Norge: N-0582 måste bli 0582 (Bring kräver 4 siffror)."""
         assert _clean_postal("N-0582") == "0582"
         assert _clean_postal("NO-0154") == "0154"
+
+    def test_garp_zipcode_trailing_letter(self):
+        """GARP kolumnfel: 0582 O → 0582 (ta bara 4 siffror)."""
+        assert _clean_postal("0582 O") == "0582"
+        assert _clean_postal("0582O") == "0582"

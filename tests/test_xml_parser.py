@@ -152,6 +152,24 @@ class TestParseFile:
         assert len(shipments) == 1
         assert shipments[0].service.product_code == "0332"
 
+    def test_garp_zipcode_city_column_fix(self, parser):
+        """GARP kolumnfel: zipcode '0582 O', city 'SLO' → zipcode 0582, city OSLO."""
+        xml = """<?xml version="1.0" encoding="UTF-8"?>
+<data>
+ <receiver rcvid="WEB">
+  <val n="name">FELIX TESTAR</val>
+  <val n="address1">TESTADRESSEN</val>
+  <val n="zipcode">0582 O</val>
+  <val n="city">SLO</val>
+  <val n="country"></val>
+ </receiver>
+ <shipment orderno="50609"><val n="from">ERNSTP</val><service srvid="BRING:0332"></service><container type="parcel"><val n="weight">1.0</val></container></shipment>
+</data>"""
+        s = parser.parse_string(xml)[0]
+        assert s.receiver.zipcode == "0582"
+        assert s.receiver.city == "OSLO"
+        assert s.receiver.country == "NO"
+
     def test_empty_country_norwegian_zipcode(self, parser):
         """Tomt country + N-0582 eller 0582 ska tolkas som Norge."""
         xml = """<?xml version="1.0" encoding="UTF-8"?>

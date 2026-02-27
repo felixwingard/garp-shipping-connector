@@ -426,10 +426,16 @@ def _extract_bulk_id_from_addon(addon: str) -> str:
 
 
 def _clean_postal(zipcode: str) -> str:
-    """Rensar postnummer för Bring. Norge kräver 4 siffror — ta bort N- prefix."""
+    """Rensar postnummer för Bring. Norge kräver 4 siffror.
+
+    - N-0582, NO-0582 → 0582
+    - 0582 O (GARP radbrytning/kolumnfel) → 0582
+    """
     cleaned = zipcode.strip().replace(" ", "")
-    # Norge: N-0582 eller NO-0582 → 0582
     cleaned = re.sub(r"^[A-Z]{1,2}-", "", cleaned, flags=re.IGNORECASE)
+    # GARP: "0582O" eller "0582 O" — ta bara första 4 siffror för norsk postnr
+    if len(cleaned) > 4 and cleaned[:4].isdigit():
+        cleaned = cleaned[:4]
     return cleaned
 
 
