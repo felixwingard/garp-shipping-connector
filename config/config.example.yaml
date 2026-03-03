@@ -8,12 +8,13 @@ paths:
   done_dir: "C:\\GARP\\Unifaun\\Done"          # Klara filer flyttas hit
   error_dir: "C:\\GARP\\Unifaun\\Error"        # Felfiler hamnar här
   log_dir: "C:\\GARP\\Logs"                    # Loggfiler
-  label_cache_dir: "C:\\GARP\\Labels"          # Backup av etiketter (PDF)
+  label_cache_dir: "C:\\GARP\\Labels"          # Etiketter sparas här vid utskriftsfel (skriv ut manuellt)
   bulk_exports_dir: "C:\\GARP\\BulkExports"    # Bring bulk Excel-backuper (vid Avsluta bulk)
   # GARP-följesedel: PDF med samma namn som ordernummer i watch_dir bifogas i kundmail.
   # T.ex. 107739-132888.pdf vid XML med orderno 107739-132888.
 
 # Avsändarinformation (Ernst P AB)
+# Avsändaren används alltid från config — XML:s "from" ignoreras.
 sender:
   name: "Ernst P AB"
   address1: "Möbelgatan 5"
@@ -116,6 +117,7 @@ logging:
 # 103      | DHL ServicePoint (B2C)  | Ombudspaket (kräver ombud-ID)
 # 104      | DHL ServicePoint (C2B)  | Returpaket — stöds ej
 # 109      | DHL Parcel Connect      | Utrikespaket
+# 112      | DHL Parcel Connect Plus | Utrikespaket (Plus)
 # 210      | DHL Pall                | Pallfrakt (packageType: 701/702)
 # 211      | DHL Stycke              | Styckegods
 #
