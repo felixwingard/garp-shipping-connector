@@ -136,6 +136,11 @@ class ShipmentOrchestrator:
         logger.info(f"{'='*60}")
         logger.info(f"Bearbetar: {filepath.name}")
         logger.info(f"{'='*60}")
+        try:
+            raw_preview = filepath.read_text(encoding="iso-8859-1", errors="replace")[:500]
+            logger.debug(f"Filinnehåll (preview): {raw_preview}")
+        except Exception:
+            pass
 
         # Kontrollera lockfil
         if not self._acquire_lock(filepath):
@@ -146,6 +151,16 @@ class ShipmentOrchestrator:
         try:
             shipments = self.parser.parse_file(filepath)
             logger.info(f"Parsade {len(shipments)} sändning(ar)")
+
+            if not shipments:
+                logger.warning(
+                    f"Inga sändningar hittades i {filepath.name}. "
+                    "Kontrollera att XML:en innehåller <shipment>-element."
+                )
+                self._notify("file_error", {
+                    "filename": filepath.name,
+                    "error": "Inga sändningar i filen",
+                })
 
             # Avsändare är alltid från config (Ernst P AB) — ignorerar XML:s "from"
             config_sender = self.config.get("sender", {}).get("name", "")
