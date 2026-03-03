@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<data>
+ <receiver rcvid="7631">
+  <val n="name">DORCH &amp; DANOLA A/S</val>
+  <val n="address1">Peder Skrams Vej 4</val>
+  <val n="address2"></val>
+  <val n="zipcode">DK-5220</val>
+  <val n="city">ODENSE SÖ</val>
+  <val n="country">DK</val>
+  <val n="phone">+4566155040</val>
+  <val n="fax"></val>
+  <val n="sms">+4566155040</val>
+  <val n="contact"></val>
+  <val n="email">felix@ernstp.se</val>
+ </receiver>
+ <shipment orderno="107937-133374">
+  <val n="from">Climbing247 NO Älvdalen</val>
+  <val n="termcode">S</val>
+  <val n="to">7631</val>
+  <val n="deliveryinstruction"></val>
+  <val n="reference">107937-133374</val>
+  <service srvid="DHL:112">
+   <addon adnid=""></addon>
+   <booking>
+    <val n="pickupbooking">YES</val>
+    <val n="pickupdate">2026-03-03</val>
+   </booking>
+  </service>
+  <ufonline>
+   <option optid="enot">
+    <val n="message">Your order 107937 is delivered, if you have question</val>
+   </option>
+  </ufonline>
+  <container type="parcel" measure="total">
+   <val n="copies">1</val>
+   <val n="packagecode">PC</val>
+   <val n="contents">material</val>
+   <val n="weight">10.00</val>
+   <val n="volume">0.00</val>
+  </container>
+ </shipment>
+</data>

@@ -137,15 +137,16 @@ class StatusWindow(tk.Toplevel):
             time_str = entry.get("time", "")
 
             if event == "shipment_ok":
+                status = "Etikett misslyckades" if entry.get("print_failed") else "OK"
                 values = (
                     time_str,
                     entry.get("order_no", ""),
                     entry.get("tracking", ""),
                     entry.get("carrier", ""),
                     entry.get("estimated_price", ""),
-                    "OK",
+                    status,
                 )
-                tag = "ok"
+                tag = "error" if entry.get("print_failed") else "ok"
             elif event == "shipment_error":
                 values = (time_str, entry.get("order_no", ""), "", "", "", "Fel")
                 tag = "error"

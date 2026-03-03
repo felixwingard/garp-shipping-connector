@@ -147,6 +147,12 @@ class ShipmentOrchestrator:
             shipments = self.parser.parse_file(filepath)
             logger.info(f"Parsade {len(shipments)} sändning(ar)")
 
+            # Avsändare är alltid från config (Ernst P AB) — ignorerar XML:s "from"
+            config_sender = self.config.get("sender", {}).get("name", "")
+            if config_sender:
+                for s in shipments:
+                    s.sender_name = config_sender
+
             for shipment in shipments:
                 # Farligt gods: Bring = endast LQ (0003)
                 # DHL Paket (102, 103) stöder inte farligt gods — enligt DHL Produktmanual v5.23
@@ -315,8 +321,17 @@ class ShipmentOrchestrator:
 
         # 3. Skriv ut etikett (→ Zebra)
         printed = self.printer.print_label(label_data, "pdf", shipment.order_no)
+        print_failed = False
         if not printed:
+            print_failed = True
             logger.warning(f"  Etikett-utskrift misslyckades för {shipment.order_no}")
+            # Spara till label_cache så användaren kan skriva ut manuellt
+            try:
+                cache_path = self.label_cache / f"{shipment.order_no}_etikett.pdf"
+                cache_path.write_bytes(label_data)
+                logger.info(f"  Etikett sparad i {cache_path} — skriv ut manuellt")
+            except Exception as e:
+                logger.warning(f"  Kunde inte spara etikett till cache: {e}")
 
         # 4. Skriv ut fraktlista/CMR (→ A4) om den finns + produkt kräver utskrift (t.ex. pall)
         # print_document_for_products: [202, 210, 205] = endast pall etc. [] = aldrig. Saknas = alltid.
@@ -451,6 +466,8 @@ class ShipmentOrchestrator:
         }
         if estimated_price:
             event_data["estimated_price"] = estimated_price
+        if print_failed:
+            event_data["print_failed"] = True
         self._notify("shipment_ok", event_data)
 
     def _find_waybill(self, shipment: "Shipment", xml_filepath: Optional[Path]) -> Optional[bytes]:

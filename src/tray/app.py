@@ -342,10 +342,17 @@ class TrayApp:
 
         # Uppdatera tray-ikon direkt (trådsäkert i pystray)
         if event_type == "shipment_ok":
-            self._update_tray_status(
-                STATUS_IDLE,
-                f"Senaste: {data.get('order_no', '')} OK"
-            )
+            order = data.get("order_no", "")
+            if data.get("print_failed"):
+                self._update_tray_status(
+                    STATUS_ERROR,
+                    f"OK men etikett misslyckades: {order}"
+                )
+            else:
+                self._update_tray_status(
+                    STATUS_IDLE,
+                    f"Senaste: {order} OK"
+                )
         elif event_type == "shipment_error":
             self._update_tray_status(
                 STATUS_ERROR,
