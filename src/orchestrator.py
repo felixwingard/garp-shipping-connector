@@ -15,6 +15,7 @@ Event-callbacks:
 import json
 import shutil
 import logging
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Callable, List, Set, Tuple
@@ -436,7 +437,12 @@ class ShipmentOrchestrator:
                         data = candidate.read_bytes()
                         is_pdf = data[:4] == b"%PDF"
                         is_fil = candidate.suffix.lower() == ".fil"
-                        if is_pdf or is_fil:  # .fil från GARP kan ha annat format än PDF
+                        # GARP kan spara som "133349" utan ändelse (typ "Fil" i Utforskaren)
+                        is_extensionless_match = (
+                            candidate.suffix == ""
+                            and candidate.stem in (shipment.order_no, order_base, xml_filepath.stem)
+                        )
+                        if is_pdf or is_fil or is_extensionless_match:
                             attachments.append(
                                 (f"Följesedel_{shipment.order_no}.pdf", data)
                             )
@@ -444,25 +450,60 @@ class ShipmentOrchestrator:
                             waybill_found = True
                             break
                 if not waybill_found:
-                    # Fallback: sök alla .fil/.pdf i mappen som innehåller order_no eller xml_stem
+                    # Fallback: sök .fil/.pdf/extensionless som innehåller order_no eller xml_stem
                     for f in parent.iterdir():
                         if not f.is_file():
                             continue
-                        if f.suffix.lower() not in (".pdf", ".fil"):
-                            continue
                         if f.suffix.lower() in (".xml", ".txt"):
                             continue  # Skippa XML-filer
+                        if f.suffix.lower() not in ("", ".pdf", ".fil"):
+                            continue
                         stem = f.stem
                         order_base = shipment.order_no.split("-")[0] if shipment.order_no else ""
                         if (shipment.order_no in stem or stem in shipment.order_no or
                                 order_base in stem or xml_filepath.stem in stem or stem in xml_filepath.stem):
                             data = f.read_bytes()
-                            if data[:4] == b"%PDF" or f.suffix.lower() == ".fil":
+                            if data[:4] == b"%PDF" or f.suffix.lower() == ".fil" or f.suffix == "":
                                 attachments.append(
                                     (f"Följesedel_{shipment.order_no}.pdf", data)
                                 )
                                 logger.info(f"  GARP-följesedel bifogas (fallback): {f.name}")
                                 break
+                # Om följesedel saknas: GARP kan skriva den efter XML — vänta och försök igen
+                if not waybill_found and xml_filepath:
+                    time.sleep(3)
+                    for candidate in candidates:
+                        if candidate.exists() and candidate.is_file():
+                            data = candidate.read_bytes()
+                            is_pdf = data[:4] == b"%PDF"
+                            is_fil = candidate.suffix.lower() == ".fil"
+                            is_extensionless_match = (
+                                candidate.suffix == ""
+                                and candidate.stem in (shipment.order_no, order_base, xml_filepath.stem)
+                            )
+                            if is_pdf or is_fil or is_extensionless_match:
+                                attachments.append(
+                                    (f"Följesedel_{shipment.order_no}.pdf", data)
+                                )
+                                logger.info(f"  GARP-följesedel bifogas (efter väntan): {candidate.name}")
+                                waybill_found = True
+                                break
+                    if not waybill_found:
+                        for f in parent.iterdir():
+                            if not f.is_file() or f.suffix.lower() in (".xml", ".txt"):
+                                continue
+                            if f.suffix.lower() not in ("", ".pdf", ".fil"):
+                                continue
+                            stem = f.stem
+                            if (shipment.order_no in stem or stem in shipment.order_no or
+                                    order_base in stem or xml_filepath.stem in stem or stem in xml_filepath.stem):
+                                data = f.read_bytes()
+                                if data[:4] == b"%PDF" or f.suffix.lower() == ".fil" or f.suffix == "":
+                                    attachments.append(
+                                        (f"Följesedel_{shipment.order_no}.pdf", data)
+                                    )
+                                    logger.info(f"  GARP-följesedel bifogas (efter väntan, fallback): {f.name}")
+                                    break
             self.emailer.send_tracking_email(
                 to_email=shipment.receiver.email,
                 order_no=shipment.order_no,
@@ -524,7 +565,8 @@ class ShipmentOrchestrator:
             if not p.exists() or not p.is_file():
                 return False
             data = p.read_bytes()
-            return data[:4] == b"%PDF" or p.suffix.lower() == ".fil"
+            # PDF, .fil, eller extensionless (t.ex. "133349" utan ändelse)
+            return data[:4] == b"%PDF" or p.suffix.lower() == ".fil" or p.suffix == ""
         for s in shipments:
             order_base = s.order_no.split("-")[0] if s.order_no else ""
             for c in [
@@ -543,9 +585,11 @@ class ShipmentOrchestrator:
         for s in shipments:
             ob = s.order_no.split("-")[0] if s.order_no else ""
             for f in parent.iterdir():
-                if not f.is_file() or f.suffix.lower() not in (".pdf", ".fil"):
+                if not f.is_file():
                     continue
                 if f.suffix.lower() in (".xml", ".txt"):
+                    continue
+                if f.suffix.lower() not in ("", ".pdf", ".fil"):
                     continue
                 stem = f.stem
                 if s.order_no in stem or stem in s.order_no or ob in stem or xml_stem in stem or stem in xml_stem:
@@ -570,7 +614,7 @@ class ShipmentOrchestrator:
             if not p.exists() or not p.is_file():
                 return False
             data = p.read_bytes()
-            return data[:4] == b"%PDF" or p.suffix.lower() == ".fil"
+            return data[:4] == b"%PDF" or p.suffix.lower() == ".fil" or p.suffix == ""
         pdfs_to_move: Set[Path] = set()
         for s in shipments:
             order_base = s.order_no.split("-")[0] if s.order_no else ""
@@ -590,9 +634,11 @@ class ShipmentOrchestrator:
         for s in shipments:
             ob = s.order_no.split("-")[0] if s.order_no else ""
             for f in parent.iterdir():
-                if not f.is_file() or f.suffix.lower() not in (".pdf", ".fil"):
+                if not f.is_file():
                     continue
                 if f.suffix.lower() in (".xml", ".txt"):
+                    continue
+                if f.suffix.lower() not in ("", ".pdf", ".fil"):
                     continue
                 stem = f.stem
                 if s.order_no in stem or stem in s.order_no or ob in stem or xml_stem in stem or stem in xml_stem:
