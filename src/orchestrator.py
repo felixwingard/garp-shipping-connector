@@ -468,6 +468,7 @@ class ShipmentOrchestrator:
                                     (f"Följesedel_{shipment.order_no}.pdf", data)
                                 )
                                 logger.info(f"  GARP-följesedel bifogas (fallback): {f.name}")
+                                waybill_found = True
                                 break
                 # Om följesedel saknas: GARP kan skriva den efter XML — vänta och försök igen
                 if not waybill_found and xml_filepath:
@@ -503,6 +504,7 @@ class ShipmentOrchestrator:
                                         (f"Följesedel_{shipment.order_no}.pdf", data)
                                     )
                                     logger.info(f"  GARP-följesedel bifogas (efter väntan, fallback): {f.name}")
+                                    waybill_found = True
                                     break
             self.emailer.send_tracking_email(
                 to_email=shipment.receiver.email,
