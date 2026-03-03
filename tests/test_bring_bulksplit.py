@@ -100,3 +100,16 @@ class TestRegisterBulkShipment:
             )
             payload = mock_post.call_args.kwargs["json"]
             assert payload["pallets"][0]["numberOfPackages"] == 5
+
+    def test_register_mixed_pallet_sends_both_services(self, bulksplit_client):
+        """Blandad pall (0332+0342) skickar båda tjänsterna."""
+        with patch.object(bulksplit_client._session, "post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"bulkShipmentId": "CS123", "waybillUrl": "", "routingLabelsUrl": ""}
+            bulksplit_client.register_bulk_shipment(
+                bulk_shipment_id="CS123",
+                total_weight_kg=30,
+                bulk_services=["0332", "0342"],
+            )
+            payload = mock_post.call_args.kwargs["json"]
+            assert payload["pallets"][0]["services"] == ["0332", "0342"]

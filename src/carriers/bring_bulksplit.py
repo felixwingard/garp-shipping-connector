@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import requests
 
@@ -103,19 +103,23 @@ class BringBulksplitClient:
         direct_pallets_weight_kg: int = 0,
         num_invoices: Optional[int] = None,
         bulk_service_code: str = "0332",
+        bulk_services: Optional[List[str]] = None,
         direct_service_code: str = "0336",
         pallet_type: str = "EUR_PALLETS",
         shipping_date: Optional[datetime] = None,
     ) -> dict:
         """Registrerar pall när den är packad. Returnerar waybillUrl, routingLabelsUrl.
-        num_pallets: antal bulk-pallar (0332) — splittas på terminal.
+        num_pallets: antal bulk-pallar — splittas på terminal.
+        bulk_services: om satt, används för bulk-pallar (t.ex. ["0332", "0342"] för blandad pall).
+                       Om None, används [bulk_service_code].
         num_direct_pallets: antal hel pall till kund (0336 Business Pallet) — går direkt till mottagare."""
         if shipping_date is None:
             shipping_date = datetime.now(timezone.utc)
 
         pallets = []
 
-        # Bulk-pallar (0332) — splittas på terminal
+        # Bulk-pallar — splittas på terminal. Blandad pall (0332+0342) stöds.
+        services = bulk_services if bulk_services else [bulk_service_code]
         n = max(0, int(num_pallets))
         if n > 0 and total_weight_kg >= 1:
             weight_per = total_weight_kg // n
@@ -127,7 +131,7 @@ class BringBulksplitClient:
                 p = pkgs_per + (1 if i < remainder_p else 0) if num_packages else None
                 pallet = {
                     "palletType": pallet_type,
-                    "services": [bulk_service_code],
+                    "services": services,
                     "totalWeightKg": max(1, w),
                 }
                 if p is not None and p > 0:

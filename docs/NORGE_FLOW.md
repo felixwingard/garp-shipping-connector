@@ -95,6 +95,7 @@ Efter registrering töms bulk-ID så att nästa vecka kan starta ny pall.
 | BRING:0340 | PICKUP_PARCEL | Enstaka ombudspaket (list-avtal) |
 
 **0332 och 0342 kräver bulk-ID.** 0330 och 0340 fungerar utan pall.
+**0332 och 0342 kan packas på samma pall** — kryssa i "Blandad pall" vid registrering.
 
 ---
 

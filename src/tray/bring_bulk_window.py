@@ -164,6 +164,15 @@ class BringBulkWindow(tk.Toplevel):
         ttk.Entry(row5, textvariable=self.num_invoices_var, width=6).pack(side="left")
         tk.Label(row5, text="(t.ex. 3 för SE→NO)", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(4, 0))
 
+        row6 = tk.Frame(inner2, bg="white")
+        row6.pack(fill="x", pady=4)
+        self.mixed_pallet_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            row6, text="Blandad pall (0332 + 0342 på samma pall)",
+            variable=self.mixed_pallet_var,
+        ).pack(anchor="w")
+        tk.Label(row6, text="— Bring tillåter båda på samma pall", font=(_font(), 8), fg="#94a3b8", bg="white").pack(side="left", padx=(4, 0))
+
         self.register_btn = ttk.Button(
             inner2, text="Registrera pall → hämta CMR",
             command=self._do_register
@@ -171,7 +180,7 @@ class BringBulkWindow(tk.Toplevel):
         self.register_btn.pack(anchor="w", pady=(12, 0))
 
         tk.Label(
-            main, text="Alla paket med BRING:0332 använder bulk-ID ovan.",
+            main, text="Paket med BRING:0332 eller BRING:0342 använder bulk-ID ovan.",
             font=(_font(), 8), fg="#94a3b8", bg="#fafafa",
         ).pack(anchor="w", pady=(0, 8))
 
@@ -447,6 +456,7 @@ class BringBulkWindow(tk.Toplevel):
                 except ValueError:
                     pass
 
+            bulk_services = ["0332", "0342"] if self.mixed_pallet_var.get() else None
             result = client.register_bulk_shipment(
                 bulk_shipment_id=bulk_id,
                 total_weight_kg=weight,
@@ -456,6 +466,7 @@ class BringBulkWindow(tk.Toplevel):
                 direct_pallets_weight_kg=direct_weight,
                 num_invoices=num_invoices_val if num_invoices_val > 0 else None,
                 bulk_service_code="0332",
+                bulk_services=bulk_services,
                 direct_service_code="0336",
             )
             waybill_url = result.get("waybillUrl", "")
