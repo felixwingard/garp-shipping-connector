@@ -406,11 +406,10 @@ class ShipmentOrchestrator:
                 except Exception as e:
                     logger.debug(f"  Kunde inte hämta Bring-pris: {e}")
 
-        # 5c. Sök och skriv ut GARP-följesedel (om dokumentskrivare eller mail)
+        # 5c. Sök GARP-följesedel (för utskrift och/eller bifogande i mail)
         has_enot = any(n.opt_id == "enot" for n in shipment.notifications)
         sending_email = not self.skip_email and shipment.receiver and shipment.receiver.email and has_enot
-        need_waybill = bool(self.printer.document_printer) or sending_email
-        waybill_data = self._find_waybill(shipment, xml_filepath) if need_waybill else None
+        waybill_data = self._find_waybill(shipment, xml_filepath) if xml_filepath else None
         if waybill_data:
             waybill_printed = self.printer.print_document(
                 waybill_data, "pdf", f"{shipment.order_no}_följesedel"
@@ -422,12 +421,13 @@ class ShipmentOrchestrator:
 
         # 6. Skicka kundmail (om e-post finns och enot-notifiering är aktiv)
         if sending_email:
-            # Bilagor: DHL fraktlista + GARP följesedel
+            # Bilagor: DHL fraktlista + GARP följesedel (båda måste bifogas)
             attachments: List[Tuple[str, bytes]] = []
             if shipment_list:
                 attachments.append((f"Fraktlista_{shipment.order_no}.pdf", shipment_list))
             if waybill_data:
                 attachments.append((f"Följesedel_{shipment.order_no}.pdf", waybill_data))
+                logger.info(f"  Följesedel bifogas till kundmail för {shipment.order_no}")
             self.emailer.send_tracking_email(
                 to_email=shipment.receiver.email,
                 order_no=shipment.order_no,
