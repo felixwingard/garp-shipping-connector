@@ -91,6 +91,11 @@ PAYER_CODE_BY_PRODUCT = {
     "205": "DDP",  # Euroline (utrikes)
 }
 
+# Internationella produkter — använder ALLTID internationellt kundnummer
+# (customer_number_dhl_international), oavsett om mottagarlandet ligger i domestic_countries.
+# domestic_countries styr enbart inrikesprodukter som 102/103/210/211.
+INTERNATIONAL_PRODUCTS = {"109", "112", "202", "205"}
+
 # PriceQuote API: dhlProductCode (Swagger ShipmentModel)
 # Paket 102/103: använd numerisk kod (DHL:s exempel: quoteforgrossprice med "103")
 # DHLPaket ger fel pris för 103; "103" ger korrekt ombudspris (48 vs 74)
@@ -562,7 +567,10 @@ class DHLClient(CarrierClient):
         pkg_type = container.package_code if container else "PKT"
 
         recv_country = (recv.country or "SE").upper()
-        use_domestic = recv_country in self._domestic_countries
+        use_domestic = (
+            recv_country in self._domestic_countries
+            and product_code not in INTERNATIONAL_PRODUCTS
+        )
         consignor_id = (
             self.customer_number
             if use_domestic
@@ -1006,9 +1014,13 @@ class DHLClient(CarrierClient):
                     f"nära {recv_zip}. Produkt {product_code} kräver ServicePoint."
                 )
 
-        # Consignor id: domestic_countries använder 101733, övriga 20193498.SE0001
+        # Consignor id: internationella produkter (109/112/202/205) använder ALLTID
+        # internationellt kundnr. Övriga (102/103/210/211) baseras på domestic_countries.
         recv_country = (recv.country or "SE").upper()
-        use_domestic = recv_country in self._domestic_countries
+        use_domestic = (
+            recv_country in self._domestic_countries
+            and product_code not in INTERNATIONAL_PRODUCTS
+        )
         consignor_id = (
             self.customer_number
             if use_domestic
