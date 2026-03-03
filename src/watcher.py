@@ -17,7 +17,7 @@ WATCH_EXTENSIONS = {".xml", ".txt"}
 
 
 class XMLFileHandler(FileSystemEventHandler):
-    """Reagerar på nya XML-filer (.xml eller .txt) i bevakad mapp."""
+    """Reagerar på nya/ändrade XML-filer (.xml eller .txt) i bevakad mapp."""
 
     def __init__(self, orchestrator, stability_seconds: int = 2):
         self.orchestrator = orchestrator
@@ -25,16 +25,30 @@ class XMLFileHandler(FileSystemEventHandler):
         self._processing: set[str] = set()
 
     def on_created(self, event):
+        self._handle(event)
+
+    def on_modified(self, event):
+        self._handle(event)
+
+    def on_moved(self, event):
         if event.is_directory:
             return
+        dest = Path(event.dest_path)
+        if dest.suffix.lower() in WATCH_EXTENSIONS:
+            if dest.name not in self._processing:
+                self._process(dest)
 
+    def _handle(self, event):
+        if event.is_directory:
+            return
         filepath = Path(event.src_path)
         if filepath.suffix.lower() not in WATCH_EXTENSIONS:
             return
-
         if filepath.name in self._processing:
             return
+        self._process(filepath)
 
+    def _process(self, filepath: Path):
         self._processing.add(filepath.name)
         try:
             self._wait_for_stability(filepath)
@@ -48,13 +62,31 @@ class XMLFileHandler(FileSystemEventHandler):
             self._processing.discard(filepath.name)
 
     def _wait_for_stability(self, filepath: Path):
-        """Väntar tills filstorleken slutar ändras (GARP skriver klart)."""
+        """Väntar tills filstorleken slutat ändras (GARP skriver klart).
+
+        Om filen tillfälligt inte hittas (t.ex. vid rename/antivirus-skanning),
+        väntar vi och försöker igen upp till 3 gånger innan vi ger upp.
+        """
         prev_size = -1
+        retries_left = 3
         for _ in range(10):
             time.sleep(self.stability_seconds)
             if not filepath.exists():
-                raise FileNotFoundError(f"Filen försvann: {filepath}")
-            current_size = filepath.stat().st_size
+                retries_left -= 1
+                if retries_left <= 0:
+                    raise FileNotFoundError(f"Filen försvann: {filepath}")
+                logger.info(
+                    f"Fil ej tillgänglig ({filepath.name}), "
+                    f"väntar {self.stability_seconds}s ({retries_left} försök kvar)"
+                )
+                continue
+            try:
+                current_size = filepath.stat().st_size
+            except OSError:
+                retries_left -= 1
+                if retries_left <= 0:
+                    raise FileNotFoundError(f"Filen ej läsbar: {filepath}")
+                continue
             if current_size == prev_size and current_size > 0:
                 return
             prev_size = current_size
