@@ -6,6 +6,8 @@ Använder watchdog för filsystemhändelser + stabilitetskontroll.
 
 import time
 import logging
+import shutil
+import tempfile
 from pathlib import Path
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -51,46 +53,84 @@ class XMLFileHandler(FileSystemEventHandler):
     def _process(self, filepath: Path):
         self._processing.add(filepath.name)
         try:
-            self._wait_for_stability(filepath)
-            logger.info(f"Ny fil: {filepath.name}")
-            self.orchestrator.process_file(filepath)
-        except FileNotFoundError:
-            logger.warning(f"Filen försvann innan bearbetning: {filepath.name}")
+            ready_path = self._ensure_file_ready(filepath)
+            if ready_path:
+                logger.info(f"Ny fil: {filepath.name}")
+                self.orchestrator.process_file(ready_path)
         except Exception as e:
             logger.error(f"Ohanterat fel för {filepath.name}: {e}", exc_info=True)
         finally:
             self._processing.discard(filepath.name)
 
-    def _wait_for_stability(self, filepath: Path):
-        """Väntar tills filstorleken slutat ändras (GARP skriver klart).
+    def _ensure_file_ready(self, filepath: Path) -> Path | None:
+        """Säkerställer att filen är redo för bearbetning.
 
-        Om filen tillfälligt inte hittas (t.ex. vid rename/antivirus-skanning),
-        väntar vi och försöker igen upp till 3 gånger innan vi ger upp.
+        Strategi:
+        1. Försök läsa filen omedelbart (snabbt — innan den försvinner)
+        2. Om filen finns: kör stabilitetskontroll (vänta tills GARP skrivit klart)
+        3. Om filen redan försvunnit: returnera None
         """
-        prev_size = -1
-        retries_left = 3
-        for _ in range(10):
+        # Försök 1: läs direkt (ingen sleep)
+        content = self._try_read(filepath)
+        if content is not None and len(content) > 0:
+            # Filen finns och har innehåll — kör snabb stabilitetskontroll
+            time.sleep(min(self.stability_seconds, 1))
+            if filepath.exists():
+                return filepath
+            # Filen försvann efter att vi läste den — spara till temp och bearbeta därifrån
+            logger.info(
+                f"Fil {filepath.name} lästes ({len(content)} bytes) "
+                f"men försvann — bearbetar från kopia"
+            )
+            return self._save_to_temp(filepath.name, content)
+
+        # Försök 2: vänta och retry (filen kanske inte är skriven ännu)
+        for attempt in range(5):
             time.sleep(self.stability_seconds)
-            if not filepath.exists():
-                retries_left -= 1
-                if retries_left <= 0:
-                    raise FileNotFoundError(f"Filen försvann: {filepath}")
+            content = self._try_read(filepath)
+            if content is not None and len(content) > 0:
+                # Kolla stabilitet (storlek ändras inte)
+                time.sleep(min(self.stability_seconds, 1))
+                content2 = self._try_read(filepath)
+                if content2 is not None:
+                    if filepath.exists():
+                        return filepath
+                    logger.info(
+                        f"Fil {filepath.name} lästes ({len(content2)} bytes) "
+                        f"men försvann — bearbetar från kopia"
+                    )
+                    return self._save_to_temp(filepath.name, content2)
+            elif content is None:
                 logger.info(
                     f"Fil ej tillgänglig ({filepath.name}), "
-                    f"väntar {self.stability_seconds}s ({retries_left} försök kvar)"
+                    f"väntar {self.stability_seconds}s ({4 - attempt} försök kvar)"
                 )
-                continue
-            try:
-                current_size = filepath.stat().st_size
-            except OSError:
-                retries_left -= 1
-                if retries_left <= 0:
-                    raise FileNotFoundError(f"Filen ej läsbar: {filepath}")
-                continue
-            if current_size == prev_size and current_size > 0:
-                return
-            prev_size = current_size
-        raise TimeoutError(f"Filen stabiliserades aldrig: {filepath}")
+
+        logger.warning(f"Filen försvann innan bearbetning: {filepath.name}")
+        return None
+
+    @staticmethod
+    def _try_read(filepath: Path) -> bytes | None:
+        """Försöker läsa filens innehåll. Returnerar None om filen inte finns/ej läsbar."""
+        try:
+            if filepath.exists():
+                return filepath.read_bytes()
+        except (OSError, PermissionError):
+            pass
+        return None
+
+    @staticmethod
+    def _save_to_temp(filename: str, content: bytes) -> Path:
+        """Sparar filinnehåll till en temporär fil för bearbetning."""
+        suffix = Path(filename).suffix or ".txt"
+        tmp = tempfile.NamedTemporaryFile(
+            suffix=suffix, prefix=f"garp_{Path(filename).stem}_",
+            delete=False
+        )
+        tmp.write(content)
+        tmp.close()
+        logger.info(f"Temporär kopia sparad: {tmp.name}")
+        return Path(tmp.name)
 
 
 class FolderWatcher:
