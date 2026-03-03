@@ -413,17 +413,24 @@ class ShipmentOrchestrator:
             if shipment_list:
                 attachments.append((f"Fraktlista_{shipment.order_no}.pdf", shipment_list))
             if xml_filepath:
-                # GARP kan exportera följesedel som {order_no}.pdf, {order_no} (utan ändelse), .fil, eller {xml-namn}.pdf
+                # GARP kan exportera följesedel som {order_no}.fil, {order_no}.pdf, eller {xml-namn}.fil
+                # Exempel: 133349.fil (GARP sparar ofta bara basnumret utan suffix)
                 parent = xml_filepath.parent
+                order_base = shipment.order_no.split("-")[0] if shipment.order_no else ""
                 candidates = [
                     parent / f"{shipment.order_no}.pdf",
                     parent / f"{shipment.order_no}.PDF",
                     parent / f"{shipment.order_no}.fil",
-                    parent / shipment.order_no,  # Utan ändelse (GARP kan exportera så)
+                    parent / shipment.order_no,
+                    parent / f"{order_base}.pdf",
+                    parent / f"{order_base}.PDF",
+                    parent / f"{order_base}.fil",
+                    parent / order_base,
                     parent / f"{xml_filepath.stem}.pdf",
                     parent / f"{xml_filepath.stem}.fil",
                     parent / xml_filepath.stem,
                 ]
+                waybill_found = False
                 for candidate in candidates:
                     if candidate.exists() and candidate.is_file():
                         data = candidate.read_bytes()
@@ -434,7 +441,28 @@ class ShipmentOrchestrator:
                                 (f"Följesedel_{shipment.order_no}.pdf", data)
                             )
                             logger.info(f"  GARP-följesedel bifogas: {candidate.name}")
+                            waybill_found = True
                             break
+                if not waybill_found:
+                    # Fallback: sök alla .fil/.pdf i mappen som innehåller order_no eller xml_stem
+                    for f in parent.iterdir():
+                        if not f.is_file():
+                            continue
+                        if f.suffix.lower() not in (".pdf", ".fil"):
+                            continue
+                        if f.suffix.lower() in (".xml", ".txt"):
+                            continue  # Skippa XML-filer
+                        stem = f.stem
+                        order_base = shipment.order_no.split("-")[0] if shipment.order_no else ""
+                        if (shipment.order_no in stem or stem in shipment.order_no or
+                                order_base in stem or xml_filepath.stem in stem or stem in xml_filepath.stem):
+                            data = f.read_bytes()
+                            if data[:4] == b"%PDF" or f.suffix.lower() == ".fil":
+                                attachments.append(
+                                    (f"Följesedel_{shipment.order_no}.pdf", data)
+                                )
+                                logger.info(f"  GARP-följesedel bifogas (fallback): {f.name}")
+                                break
             self.emailer.send_tracking_email(
                 to_email=shipment.receiver.email,
                 order_no=shipment.order_no,
@@ -490,17 +518,39 @@ class ShipmentOrchestrator:
         parent = filepath.parent
         xml_stem = filepath.stem
 
-        # Ta bort följesedlar (bifogade mailet) — även .fil eller utan ändelse
+        # Ta bort följesedlar (bifogade mailet) — även .fil (GARP sparar inte alltid som PDF)
         pdfs_to_remove: Set[Path] = set()
+        def _is_waybill(p: Path) -> bool:
+            if not p.exists() or not p.is_file():
+                return False
+            data = p.read_bytes()
+            return data[:4] == b"%PDF" or p.suffix.lower() == ".fil"
         for s in shipments:
-            for c in [parent / f"{s.order_no}.pdf", parent / f"{s.order_no}.PDF", parent / f"{s.order_no}.fil", parent / s.order_no]:
-                if c.exists() and c.is_file() and c.read_bytes()[:4] == b"%PDF":
+            order_base = s.order_no.split("-")[0] if s.order_no else ""
+            for c in [
+                parent / f"{s.order_no}.pdf", parent / f"{s.order_no}.PDF",
+                parent / f"{s.order_no}.fil", parent / s.order_no,
+                parent / f"{order_base}.pdf", parent / f"{order_base}.fil", parent / order_base,
+            ]:
+                if _is_waybill(c):
                     pdfs_to_remove.add(c)
                     break
         for c in [parent / f"{xml_stem}.pdf", parent / f"{xml_stem}.fil", parent / xml_stem]:
-            if c.exists() and c.is_file() and c.read_bytes()[:4] == b"%PDF":
+            if _is_waybill(c):
                 pdfs_to_remove.add(c)
                 break
+        # Fallback: ta bort .fil/.pdf som innehåller order_no, order_base eller xml_stem i filnamnet
+        for s in shipments:
+            ob = s.order_no.split("-")[0] if s.order_no else ""
+            for f in parent.iterdir():
+                if not f.is_file() or f.suffix.lower() not in (".pdf", ".fil"):
+                    continue
+                if f.suffix.lower() in (".xml", ".txt"):
+                    continue
+                stem = f.stem
+                if s.order_no in stem or stem in s.order_no or ob in stem or xml_stem in stem or stem in xml_stem:
+                    if _is_waybill(f):
+                        pdfs_to_remove.add(f)
         for pdf_path in pdfs_to_remove:
             pdf_path.unlink(missing_ok=True)
             logger.info(f"  Följesedel borttagen: {pdf_path.name}")
@@ -515,17 +565,39 @@ class ShipmentOrchestrator:
         parent = filepath.parent
         xml_stem = filepath.stem
 
-        # Sök följesedlar — även .fil eller utan ändelse
+        # Sök följesedlar — även .fil (GARP sparar inte alltid som PDF)
+        def _is_waybill(p: Path) -> bool:
+            if not p.exists() or not p.is_file():
+                return False
+            data = p.read_bytes()
+            return data[:4] == b"%PDF" or p.suffix.lower() == ".fil"
         pdfs_to_move: Set[Path] = set()
         for s in shipments:
-            for c in [parent / f"{s.order_no}.pdf", parent / f"{s.order_no}.PDF", parent / f"{s.order_no}.fil", parent / s.order_no]:
-                if c.exists() and c.is_file() and c.read_bytes()[:4] == b"%PDF":
+            order_base = s.order_no.split("-")[0] if s.order_no else ""
+            for c in [
+                parent / f"{s.order_no}.pdf", parent / f"{s.order_no}.PDF",
+                parent / f"{s.order_no}.fil", parent / s.order_no,
+                parent / f"{order_base}.pdf", parent / f"{order_base}.fil", parent / order_base,
+            ]:
+                if _is_waybill(c):
                     pdfs_to_move.add(c)
                     break
         for c in [parent / f"{xml_stem}.pdf", parent / f"{xml_stem}.fil", parent / xml_stem]:
-            if c.exists() and c.is_file() and c.read_bytes()[:4] == b"%PDF":
+            if _is_waybill(c):
                 pdfs_to_move.add(c)
                 break
+        # Fallback: flytta .fil/.pdf som innehåller order_no, order_base eller xml_stem i filnamnet
+        for s in shipments:
+            ob = s.order_no.split("-")[0] if s.order_no else ""
+            for f in parent.iterdir():
+                if not f.is_file() or f.suffix.lower() not in (".pdf", ".fil"):
+                    continue
+                if f.suffix.lower() in (".xml", ".txt"):
+                    continue
+                stem = f.stem
+                if s.order_no in stem or stem in s.order_no or ob in stem or xml_stem in stem or stem in xml_stem:
+                    if _is_waybill(f):
+                        pdfs_to_move.add(f)
 
         # Flytta XML
         dest = self.error_dir / f"{ts}_{filepath.name}"
