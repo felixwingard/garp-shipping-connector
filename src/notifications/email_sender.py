@@ -88,6 +88,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Estimerad leverans",
         "signoff": "Vänliga hälsningar,",
         "footer": "Detta mail skickades automatiskt • Detta mail går inte att svara på",
+        "waybill_filename": "Följesedel",
+        "shipment_list_filename": "Fraktlista",
     },
     "en": {
         "subject": "Your order {order} has been shipped!",
@@ -109,6 +111,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Estimated delivery",
         "signoff": "Best regards,",
         "footer": "This email was sent automatically • Do not reply to this email",
+        "waybill_filename": "Delivery note",
+        "shipment_list_filename": "Shipping list",
     },
     "de": {
         "subject": "Ihre Bestellung {order} wurde versendet!",
@@ -130,6 +134,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Voraussichtliche Lieferung",
         "signoff": "Freundliche Grüße,",
         "footer": "Diese E-Mail wurde automatisch gesendet • Diese E-Mail kann nicht beantwortet werden",
+        "waybill_filename": "Lieferschein",
+        "shipment_list_filename": "Frachtliste",
     },
     "da": {
         "subject": "Din ordre {order} er blevet sendt!",
@@ -151,6 +157,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Forventet levering",
         "signoff": "Venlig hilsen,",
         "footer": "Denne e-mail blev sendt automatisk • Svar ikke på denne e-mail",
+        "waybill_filename": "Følgeseddel",
+        "shipment_list_filename": "Fragtliste",
     },
     "no": {
         "subject": "Din ordre {order} er sendt!",
@@ -172,6 +180,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Forventet levering",
         "signoff": "Vennlig hilsen,",
         "footer": "Denne e-posten ble sendt automatisk • Svar ikke på denne e-posten",
+        "waybill_filename": "Følgeseddel",
+        "shipment_list_filename": "Fraktliste",
     },
     "pl": {
         "subject": "Twoje zamówienie {order} zostało wysłane!",
@@ -193,6 +203,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Szacowana dostawa",
         "signoff": "Z poważaniem,",
         "footer": "Ta wiadomość została wysłana automatycznie • Nie odpowiadaj na tę wiadomość",
+        "waybill_filename": "List przewozowy",
+        "shipment_list_filename": "Lista wysyłkowa",
     },
     "nl": {
         "subject": "Uw bestelling {order} is verzonden!",
@@ -214,6 +226,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Verwachte levering",
         "signoff": "Met vriendelijke groet,",
         "footer": "Deze e-mail is automatisch verzonden • Reageer niet op deze e-mail",
+        "waybill_filename": "Pakbon",
+        "shipment_list_filename": "Verzendlijst",
     },
     "fi": {
         "subject": "Tilauksesi {order} on lähetetty!",
@@ -235,6 +249,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Arvioitu toimitus",
         "signoff": "Ystävällisin terveisin,",
         "footer": "Tämä sähköposti lähetettiin automaattisesti • Älä vastaa tähän sähköpostiin",
+        "waybill_filename": "Kuittilappu",
+        "shipment_list_filename": "Lähetyslista",
     },
     "fr": {
         "subject": "Votre commande {order} a été expédiée!",
@@ -256,6 +272,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Livraison estimée",
         "signoff": "Cordialement,",
         "footer": "Cet e-mail a été envoyé automatiquement • Ne pas répondre à cet e-mail",
+        "waybill_filename": "Bon de livraison",
+        "shipment_list_filename": "Liste d'expédition",
     },
     "es": {
         "subject": "¡Tu pedido {order} ha sido enviado!",
@@ -277,6 +295,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Entrega estimada",
         "signoff": "Atentamente,",
         "footer": "Este correo se envió automáticamente • No responder a este correo",
+        "waybill_filename": "Albarán",
+        "shipment_list_filename": "Lista de envío",
     },
     "it": {
         "subject": "Il tuo ordine {order} è stato spedito!",
@@ -298,6 +318,8 @@ EMAIL_TEXTS = {
         "estimated_delivery": "Consegna stimata",
         "signoff": "Cordiali saluti,",
         "footer": "Questa e-mail è stata inviata automaticamente • Non rispondere a questa e-mail",
+        "waybill_filename": "Bolla di consegna",
+        "shipment_list_filename": "Lista di spedizione",
     },
 }
 
@@ -405,7 +427,14 @@ class EmailSender:
         msg["To"] = to_email
         msg.attach(MIMEText(html_body, "html", "utf-8"))
 
+        # Lokalisera bifogsfilnamn utifrån mottagarens land
+        waybill_prefix = texts.get("waybill_filename", "Följesedel")
+        shipment_list_prefix = texts.get("shipment_list_filename", "Fraktlista")
         for filename, data in attachments or []:
+            if filename.startswith("Följesedel_"):
+                filename = waybill_prefix + "_" + filename.split("_", 1)[1]
+            elif filename.startswith("Fraktlista_"):
+                filename = shipment_list_prefix + "_" + filename.split("_", 1)[1]
             part = MIMEBase("application", "pdf")
             part.set_payload(data)
             encoders.encode_base64(part)
