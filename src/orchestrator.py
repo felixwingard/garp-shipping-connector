@@ -413,17 +413,28 @@ class ShipmentOrchestrator:
             if shipment_list:
                 attachments.append((f"Fraktlista_{shipment.order_no}.pdf", shipment_list))
             if xml_filepath:
-                # GARP kan exportera följesedel som {order_no}.pdf eller {xml-namn}.pdf
-                for candidate in [
-                    xml_filepath.parent / f"{shipment.order_no}.pdf",
-                    xml_filepath.parent / f"{xml_filepath.stem}.pdf",
-                ]:
-                    if candidate.exists():
-                        attachments.append(
-                            (f"Följesedel_{shipment.order_no}.pdf", candidate.read_bytes())
-                        )
-                        logger.info(f"  GARP-följesedel bifogas: {candidate.name}")
-                        break
+                # GARP kan exportera följesedel som {order_no}.pdf, {order_no} (utan ändelse), .fil, eller {xml-namn}.pdf
+                parent = xml_filepath.parent
+                candidates = [
+                    parent / f"{shipment.order_no}.pdf",
+                    parent / f"{shipment.order_no}.PDF",
+                    parent / f"{shipment.order_no}.fil",
+                    parent / shipment.order_no,  # Utan ändelse (GARP kan exportera så)
+                    parent / f"{xml_filepath.stem}.pdf",
+                    parent / f"{xml_filepath.stem}.fil",
+                    parent / xml_filepath.stem,
+                ]
+                for candidate in candidates:
+                    if candidate.exists() and candidate.is_file():
+                        data = candidate.read_bytes()
+                        is_pdf = data[:4] == b"%PDF"
+                        is_fil = candidate.suffix.lower() == ".fil"
+                        if is_pdf or is_fil:  # .fil från GARP kan ha annat format än PDF
+                            attachments.append(
+                                (f"Följesedel_{shipment.order_no}.pdf", data)
+                            )
+                            logger.info(f"  GARP-följesedel bifogas: {candidate.name}")
+                            break
             self.emailer.send_tracking_email(
                 to_email=shipment.receiver.email,
                 order_no=shipment.order_no,
@@ -479,15 +490,17 @@ class ShipmentOrchestrator:
         parent = filepath.parent
         xml_stem = filepath.stem
 
-        # Ta bort följesedlar (bifogade mailet)
+        # Ta bort följesedlar (bifogade mailet) — även .fil eller utan ändelse
         pdfs_to_remove: Set[Path] = set()
         for s in shipments:
-            candidate = parent / f"{s.order_no}.pdf"
-            if candidate.exists():
-                pdfs_to_remove.add(candidate)
-        stem_pdf = parent / f"{xml_stem}.pdf"
-        if stem_pdf.exists():
-            pdfs_to_remove.add(stem_pdf)
+            for c in [parent / f"{s.order_no}.pdf", parent / f"{s.order_no}.PDF", parent / f"{s.order_no}.fil", parent / s.order_no]:
+                if c.exists() and c.is_file() and c.read_bytes()[:4] == b"%PDF":
+                    pdfs_to_remove.add(c)
+                    break
+        for c in [parent / f"{xml_stem}.pdf", parent / f"{xml_stem}.fil", parent / xml_stem]:
+            if c.exists() and c.is_file() and c.read_bytes()[:4] == b"%PDF":
+                pdfs_to_remove.add(c)
+                break
         for pdf_path in pdfs_to_remove:
             pdf_path.unlink(missing_ok=True)
             logger.info(f"  Följesedel borttagen: {pdf_path.name}")
@@ -502,15 +515,17 @@ class ShipmentOrchestrator:
         parent = filepath.parent
         xml_stem = filepath.stem
 
-        # Sök följesedlar
+        # Sök följesedlar — även .fil eller utan ändelse
         pdfs_to_move: Set[Path] = set()
         for s in shipments:
-            candidate = parent / f"{s.order_no}.pdf"
-            if candidate.exists():
-                pdfs_to_move.add(candidate)
-        stem_pdf = parent / f"{xml_stem}.pdf"
-        if stem_pdf.exists():
-            pdfs_to_move.add(stem_pdf)
+            for c in [parent / f"{s.order_no}.pdf", parent / f"{s.order_no}.PDF", parent / f"{s.order_no}.fil", parent / s.order_no]:
+                if c.exists() and c.is_file() and c.read_bytes()[:4] == b"%PDF":
+                    pdfs_to_move.add(c)
+                    break
+        for c in [parent / f"{xml_stem}.pdf", parent / f"{xml_stem}.fil", parent / xml_stem]:
+            if c.exists() and c.is_file() and c.read_bytes()[:4] == b"%PDF":
+                pdfs_to_move.add(c)
+                break
 
         # Flytta XML
         dest = self.error_dir / f"{ts}_{filepath.name}"
