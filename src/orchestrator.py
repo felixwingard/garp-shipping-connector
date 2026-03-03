@@ -406,106 +406,28 @@ class ShipmentOrchestrator:
                 except Exception as e:
                     logger.debug(f"  Kunde inte hämta Bring-pris: {e}")
 
-        # 6. Skicka kundmail (om e-post finns och enot-notifiering är aktiv)
+        # 5c. Sök och skriv ut GARP-följesedel (om dokumentskrivare eller mail)
         has_enot = any(n.opt_id == "enot" for n in shipment.notifications)
-        if not self.skip_email and shipment.receiver and shipment.receiver.email and has_enot:
-            # Bilagor: DHL fraktlista + GARP följesedel (om PDF finns i samma mapp som XML)
+        sending_email = not self.skip_email and shipment.receiver and shipment.receiver.email and has_enot
+        need_waybill = bool(self.printer.document_printer) or sending_email
+        waybill_data = self._find_waybill(shipment, xml_filepath) if need_waybill else None
+        if waybill_data:
+            waybill_printed = self.printer.print_document(
+                waybill_data, "pdf", f"{shipment.order_no}_följesedel"
+            )
+            if waybill_printed:
+                logger.info(f"  Följesedel utskriven för order {shipment.order_no}")
+            else:
+                logger.warning(f"  Följesedel utskrift misslyckades för {shipment.order_no}")
+
+        # 6. Skicka kundmail (om e-post finns och enot-notifiering är aktiv)
+        if sending_email:
+            # Bilagor: DHL fraktlista + GARP följesedel
             attachments: List[Tuple[str, bytes]] = []
             if shipment_list:
                 attachments.append((f"Fraktlista_{shipment.order_no}.pdf", shipment_list))
-            if xml_filepath:
-                # GARP kan exportera följesedel som {order_no}.fil, {order_no}.pdf, eller {xml-namn}.fil
-                # Exempel: 133349.fil (GARP sparar ofta bara basnumret utan suffix)
-                parent = xml_filepath.parent
-                order_base = shipment.order_no.split("-")[0] if shipment.order_no else ""
-                candidates = [
-                    parent / f"{shipment.order_no}.pdf",
-                    parent / f"{shipment.order_no}.PDF",
-                    parent / f"{shipment.order_no}.fil",
-                    parent / shipment.order_no,
-                    parent / f"{order_base}.pdf",
-                    parent / f"{order_base}.PDF",
-                    parent / f"{order_base}.fil",
-                    parent / order_base,
-                    parent / f"{xml_filepath.stem}.pdf",
-                    parent / f"{xml_filepath.stem}.fil",
-                    parent / xml_filepath.stem,
-                ]
-                waybill_found = False
-                for candidate in candidates:
-                    if candidate.exists() and candidate.is_file():
-                        data = candidate.read_bytes()
-                        is_pdf = data[:4] == b"%PDF"
-                        is_fil = candidate.suffix.lower() == ".fil"
-                        # GARP kan spara som "133349" utan ändelse (typ "Fil" i Utforskaren)
-                        is_extensionless_match = (
-                            candidate.suffix == ""
-                            and candidate.stem in (shipment.order_no, order_base, xml_filepath.stem)
-                        )
-                        if is_pdf or is_fil or is_extensionless_match:
-                            attachments.append(
-                                (f"Följesedel_{shipment.order_no}.pdf", data)
-                            )
-                            logger.info(f"  GARP-följesedel bifogas: {candidate.name}")
-                            waybill_found = True
-                            break
-                if not waybill_found:
-                    # Fallback: sök .fil/.pdf/extensionless som innehåller order_no eller xml_stem
-                    for f in parent.iterdir():
-                        if not f.is_file():
-                            continue
-                        if f.suffix.lower() in (".xml", ".txt"):
-                            continue  # Skippa XML-filer
-                        if f.suffix.lower() not in ("", ".pdf", ".fil"):
-                            continue
-                        stem = f.stem
-                        order_base = shipment.order_no.split("-")[0] if shipment.order_no else ""
-                        if (shipment.order_no in stem or stem in shipment.order_no or
-                                order_base in stem or xml_filepath.stem in stem or stem in xml_filepath.stem):
-                            data = f.read_bytes()
-                            if data[:4] == b"%PDF" or f.suffix.lower() == ".fil" or f.suffix == "":
-                                attachments.append(
-                                    (f"Följesedel_{shipment.order_no}.pdf", data)
-                                )
-                                logger.info(f"  GARP-följesedel bifogas (fallback): {f.name}")
-                                waybill_found = True
-                                break
-                # Om följesedel saknas: GARP kan skriva den efter XML — vänta och försök igen
-                if not waybill_found and xml_filepath:
-                    time.sleep(3)
-                    for candidate in candidates:
-                        if candidate.exists() and candidate.is_file():
-                            data = candidate.read_bytes()
-                            is_pdf = data[:4] == b"%PDF"
-                            is_fil = candidate.suffix.lower() == ".fil"
-                            is_extensionless_match = (
-                                candidate.suffix == ""
-                                and candidate.stem in (shipment.order_no, order_base, xml_filepath.stem)
-                            )
-                            if is_pdf or is_fil or is_extensionless_match:
-                                attachments.append(
-                                    (f"Följesedel_{shipment.order_no}.pdf", data)
-                                )
-                                logger.info(f"  GARP-följesedel bifogas (efter väntan): {candidate.name}")
-                                waybill_found = True
-                                break
-                    if not waybill_found:
-                        for f in parent.iterdir():
-                            if not f.is_file() or f.suffix.lower() in (".xml", ".txt"):
-                                continue
-                            if f.suffix.lower() not in ("", ".pdf", ".fil"):
-                                continue
-                            stem = f.stem
-                            if (shipment.order_no in stem or stem in shipment.order_no or
-                                    order_base in stem or xml_filepath.stem in stem or stem in xml_filepath.stem):
-                                data = f.read_bytes()
-                                if data[:4] == b"%PDF" or f.suffix.lower() == ".fil" or f.suffix == "":
-                                    attachments.append(
-                                        (f"Följesedel_{shipment.order_no}.pdf", data)
-                                    )
-                                    logger.info(f"  GARP-följesedel bifogas (efter väntan, fallback): {f.name}")
-                                    waybill_found = True
-                                    break
+            if waybill_data:
+                attachments.append((f"Följesedel_{shipment.order_no}.pdf", waybill_data))
             self.emailer.send_tracking_email(
                 to_email=shipment.receiver.email,
                 order_no=shipment.order_no,
@@ -530,6 +452,54 @@ class ShipmentOrchestrator:
         if estimated_price:
             event_data["estimated_price"] = estimated_price
         self._notify("shipment_ok", event_data)
+
+    def _find_waybill(self, shipment: "Shipment", xml_filepath: Optional[Path]) -> Optional[bytes]:
+        """Hittar GARP-följesedel i samma mapp som XML. Returnerar bytes eller None."""
+        if not xml_filepath:
+            return None
+        parent = xml_filepath.parent
+        order_base = shipment.order_no.split("-")[0] if shipment.order_no else ""
+        candidates = [
+            parent / f"{shipment.order_no}.pdf",
+            parent / f"{shipment.order_no}.PDF",
+            parent / f"{shipment.order_no}.fil",
+            parent / shipment.order_no,
+            parent / f"{order_base}.pdf",
+            parent / f"{order_base}.PDF",
+            parent / f"{order_base}.fil",
+            parent / order_base,
+            parent / f"{xml_filepath.stem}.pdf",
+            parent / f"{xml_filepath.stem}.fil",
+            parent / xml_filepath.stem,
+        ]
+
+        def _try_find() -> Optional[bytes]:
+            for c in candidates:
+                if c.exists() and c.is_file():
+                    data = c.read_bytes()
+                    is_pdf = data[:4] == b"%PDF"
+                    is_fil = c.suffix.lower() == ".fil"
+                    is_ext = c.suffix == "" and c.stem in (shipment.order_no, order_base, xml_filepath.stem)
+                    if is_pdf or is_fil or is_ext:
+                        return data
+            for f in parent.iterdir():
+                if not f.is_file() or f.suffix.lower() in (".xml", ".txt"):
+                    continue
+                if f.suffix.lower() not in ("", ".pdf", ".fil"):
+                    continue
+                stem = f.stem
+                if (shipment.order_no in stem or stem in shipment.order_no or
+                        order_base in stem or xml_filepath.stem in stem or stem in xml_filepath.stem):
+                    data = f.read_bytes()
+                    if data[:4] == b"%PDF" or f.suffix.lower() == ".fil" or f.suffix == "":
+                        return data
+            return None
+
+        data = _try_find()
+        if data:
+            return data
+        time.sleep(3)
+        return _try_find()
 
     def _acquire_lock(self, filepath: Path) -> bool:
         """Skapar lockfil för att förhindra dubbelbearbetning."""
