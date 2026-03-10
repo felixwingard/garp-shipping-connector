@@ -303,7 +303,7 @@ class ShipmentOrchestrator:
             prod = shipment.service.product_code.upper() if shipment.service else ""
             if prod in ("0332", "0342", "BUSINESS_PARCEL_BULK", "PICKUP_PARCEL_BULK"):
                 kolli = sum(c.copies for c in shipment.containers) if shipment.containers else 1
-                weight_kg = sum((c.weight or 0) * c.copies for c in shipment.containers) if shipment.containers else 0
+                weight_kg = sum(c.weight or 0 for c in shipment.containers) if shipment.containers else 0
                 bulk_id = (self.config.get("bring") or {}).get("consolidated_shipment_id", "").strip()
                 try:
                     from .utils.config import increment_bring_bulk_count, increment_bring_bulk_weight
