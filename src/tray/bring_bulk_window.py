@@ -222,12 +222,15 @@ class BringBulkWindow(tk.Toplevel):
         self._update_parcel_count_display()
 
     def _update_parcel_count_display(self):
-        """Uppdaterar antal kolli och totalvikt. Prioritet: 1) Excel (bulk_orders) 2) config.yaml."""
+        """Uppdaterar antal kolli och totalvikt. Prioritet: 1) Excel (bulk_orders) 2) config.yaml.
+
+        Skriver bara över fälten om nya paket tillkommit (värdena ändrats från datakällan).
+        Om användaren har redigerat fältet manuellt och datakällan inte ändrats, behålls användarens värde.
+        """
         if not hasattr(self, "num_packages_var") or not hasattr(self, "weight_var"):
             return
         bulk_id = self.config.get("bring", {}).get("consolidated_shipment_id", "").strip()
         count, weight = None, None
-        # Läs från bulk-Excel först (källan för totalvikt och antal kolli)
         if bulk_id:
             try:
                 from ..utils.bulk_export import get_bulk_totals
@@ -237,7 +240,6 @@ class BringBulkWindow(tk.Toplevel):
                     weight = float(totals.get("total_weight_kg", 0))
             except Exception:
                 pass
-        # Fallback till config om Excel saknar data
         if count is None or weight is None:
             try:
                 from ..utils.config import get_config_path
@@ -253,8 +255,20 @@ class BringBulkWindow(tk.Toplevel):
                         weight = float(bring.get("bulk_total_weight_kg", 0) or 0)
             except Exception:
                 pass
-        self.num_packages_var.set(str(count) if count else "")
-        self.weight_var.set(str(int(weight)) if weight else "")
+
+        new_count = str(count) if count else ""
+        new_weight = str(int(weight)) if weight else ""
+
+        last_count = getattr(self, "_last_source_count", None)
+        last_weight = getattr(self, "_last_source_weight", None)
+
+        if new_count != last_count:
+            self.num_packages_var.set(new_count)
+        if new_weight != last_weight:
+            self.weight_var.set(new_weight)
+
+        self._last_source_count = new_count
+        self._last_source_weight = new_weight
 
     def _schedule_parcel_refresh(self):
         """Startar periodisk uppdatering av kolli/vikt (var 3:e sekund)."""
