@@ -1,8 +1,13 @@
-"""Dialog för att ange farligt gods (ADR) — används när sidecar-fil saknas."""
+"""Dialog för att ange farligt gods (ADR) — används när sidecar-fil saknas.
+
+UN-nummer slås upp automatiskt via GitHub (tantalor/un) för att fylla i
+transportbenämning och ADR-klass.
+"""
 
 import json
 import logging
 import platform
+import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
 from pathlib import Path
@@ -11,6 +16,8 @@ from typing import Optional, Callable
 from ..parsers.models import DangerousGoodsInfo
 
 logger = logging.getLogger(__name__)
+
+UN_LOOKUP_URL = "https://raw.githubusercontent.com/tantalor/un/master/data/{un}.json"
 
 ADR_CLASSES = [
     "",
@@ -29,6 +36,12 @@ ADR_CLASSES = [
     "9 — Övriga farliga ämnen",
 ]
 
+_ADR_CLASS_INDEX = {}
+for i, item in enumerate(ADR_CLASSES):
+    code = item.split("—")[0].strip()
+    if code:
+        _ADR_CLASS_INDEX[code] = i
+
 
 def _font():
     return "Segoe UI" if platform.system() == "Windows" else "Helvetica Neue"
@@ -36,6 +49,23 @@ def _font():
 
 def _adr_class_value(display: str) -> str:
     return display.split("—")[0].strip() if display else ""
+
+
+def _lookup_un_number(un: str) -> Optional[dict]:
+    """Slår upp UN-nummer online. Returnerar {'description', 'class', 'number'} eller None."""
+    import urllib.request
+    try:
+        url = UN_LOOKUP_URL.format(un=un.strip().lstrip("0") or un.strip())
+        resp = urllib.request.urlopen(url, timeout=5)
+        return json.loads(resp.read())
+    except Exception:
+        pass
+    try:
+        url = UN_LOOKUP_URL.format(un=un.strip().zfill(4))
+        resp = urllib.request.urlopen(url, timeout=5)
+        return json.loads(resp.read())
+    except Exception:
+        return None
 
 
 class DangerousGoodsDialog(tk.Toplevel):
@@ -53,6 +83,7 @@ class DangerousGoodsDialog(tk.Toplevel):
         self.xml_filepath = Path(xml_filepath)
         self.on_confirm = on_confirm
         self._result: Optional[DangerousGoodsInfo] = None
+        self._lookup_after_id = None
 
         self.title(f"Farligt gods — order {order_no}")
         self.minsize(480, 400)
@@ -67,16 +98,13 @@ class DangerousGoodsDialog(tk.Toplevel):
 
     def _center(self):
         self.update_idletasks()
-        w = self.winfo_reqwidth()
-        h = self.winfo_reqheight()
-        w = max(w, 500)
-        h = max(h, 580)
+        w = max(self.winfo_reqwidth(), 520)
+        h = max(self.winfo_reqheight(), 620)
         x = (self.winfo_screenwidth() // 2) - (w // 2)
         y = (self.winfo_screenheight() // 2) - (h // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
 
     def _build_ui(self):
-        # Scrollable canvas for Windows DPI scaling
         canvas = tk.Canvas(self, bg="#fafafa", highlightthickness=0)
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -129,12 +157,25 @@ class DangerousGoodsDialog(tk.Toplevel):
                              bg="white", fg="#334155", padx=14, pady=10)
         card.pack(fill="x", pady=(0, 12))
 
+        # UN-nummer med auto-lookup
+        f_un = tk.Frame(card, bg="white")
+        f_un.pack(fill="x", pady=(0, 6))
+        tk.Label(f_un, text="UN-nummer *", font=(_font(), 9, "bold"),
+                 fg="#334155", bg="white").pack(anchor="w")
+        un_row = tk.Frame(f_un, bg="white")
+        un_row.pack(fill="x", pady=(2, 0))
         self.un_number_var = tk.StringVar()
-        self._field(card, "UN-nummer *", self.un_number_var, 16, "t.ex. 1987")
+        self.un_number_var.trace_add("write", self._on_un_changed)
+        ttk.Entry(un_row, textvariable=self.un_number_var, width=10).pack(side="left")
+        self.un_status_label = tk.Label(un_row, text="", font=(_font(), 8),
+                                        fg="#94a3b8", bg="white")
+        self.un_status_label.pack(side="left", padx=(8, 0))
+        tk.Label(f_un, text="Skriv 4 siffror — benämning och klass fylls i automatiskt",
+                 font=(_font(), 8), fg="#94a3b8", bg="white").pack(anchor="w")
 
         self.proper_name_var = tk.StringVar()
-        self._field(card, "Officiell transportbenämning *", self.proper_name_var, 40,
-                    "t.ex. ALCOHOLS, N.O.S.")
+        self._field(card, "Officiell transportbenämning *", self.proper_name_var, 44,
+                    "t.ex. FLAMMABLE LIQUID, N.O.S.")
 
         # ADR-klass dropdown
         f_adr = tk.Frame(card, bg="white")
@@ -142,10 +183,11 @@ class DangerousGoodsDialog(tk.Toplevel):
         tk.Label(f_adr, text="ADR-klass *", font=(_font(), 9, "bold"),
                  fg="#334155", bg="white").pack(anchor="w")
         self.adr_class_var = tk.StringVar()
-        ttk.Combobox(
+        self.adr_combo = ttk.Combobox(
             f_adr, textvariable=self.adr_class_var,
             values=ADR_CLASSES, width=42, state="readonly",
-        ).pack(anchor="w", pady=(2, 0))
+        )
+        self.adr_combo.pack(anchor="w", pady=(2, 0))
 
         # Förpackningsgrupp dropdown
         f_pg = tk.Frame(card, bg="white")
@@ -179,16 +221,13 @@ class DangerousGoodsDialog(tk.Toplevel):
         btn_f = tk.Frame(main, bg="#fafafa")
         btn_f.pack(fill="x", pady=(0, 8))
 
-        cancel_btn = ttk.Button(btn_f, text="Avbryt", command=self._on_cancel)
-        cancel_btn.pack(side="left", padx=(0, 12))
+        ttk.Button(btn_f, text="Avbryt", command=self._on_cancel).pack(side="left", padx=(0, 12))
 
-        ok_btn = ttk.Button(btn_f, text="  Bekräfta och boka  ", command=self._on_ok)
-        ok_btn.pack(side="right")
-
-        # Gör OK-knappen grön/framträdande via style
         style = ttk.Style()
         style.configure("Accent.TButton", font=(_font(), 10, "bold"))
-        ok_btn.configure(style="Accent.TButton")
+        ok_btn = ttk.Button(btn_f, text="  Bekräfta och boka  ", command=self._on_ok,
+                            style="Accent.TButton")
+        ok_btn.pack(side="right")
 
     def _field(self, parent, label: str, var: tk.StringVar, width: int = 30, hint: str = ""):
         f = tk.Frame(parent, bg="white")
@@ -203,10 +242,51 @@ class DangerousGoodsDialog(tk.Toplevel):
         if hint:
             tk.Label(f, text=hint, font=(_font(), 8), fg="#94a3b8", bg="white").pack(anchor="w")
 
+    def _on_un_changed(self, *_args):
+        if self._lookup_after_id:
+            self.after_cancel(self._lookup_after_id)
+        un = self.un_number_var.get().strip()
+        if len(un) >= 4 and un.isdigit():
+            self.un_status_label.config(text="Söker...", fg="#3b82f6")
+            self._lookup_after_id = self.after(300, lambda: self._do_lookup(un))
+        else:
+            self.un_status_label.config(text="", fg="#94a3b8")
+
+    def _do_lookup(self, un: str):
+        def _bg():
+            result = _lookup_un_number(un)
+            if not self.winfo_exists():
+                return
+            self.after(0, lambda: self._apply_lookup(result, un))
+
+        threading.Thread(target=_bg, daemon=True).start()
+
+    def _apply_lookup(self, result: Optional[dict], un: str):
+        if not self.winfo_exists():
+            return
+        if self.un_number_var.get().strip() != un:
+            return
+
+        if result:
+            desc = result.get("description", "")
+            cls = result.get("class", "")
+
+            if desc and not self.proper_name_var.get().strip():
+                self.proper_name_var.set(desc.upper())
+
+            if cls:
+                idx = _ADR_CLASS_INDEX.get(cls)
+                if idx is not None and not _adr_class_value(self.adr_class_var.get()):
+                    self.adr_combo.current(idx)
+
+            self.un_status_label.config(text=f"UN {un}: {desc}", fg="#16a34a")
+        else:
+            self.un_status_label.config(text=f"UN {un} hittades inte — fyll i manuellt", fg="#d97706")
+
     def _on_ok(self):
         un = self.un_number_var.get().strip()
         if not un:
-            messagebox.showwarning("UN-nummer krävs", "Ange UN-nummer för farligt gods.", parent=self)
+            messagebox.showwarning("UN-nummer krävs", "Ange UN-nummer.", parent=self)
             return
 
         proper = self.proper_name_var.get().strip()
