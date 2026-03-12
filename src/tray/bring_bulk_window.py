@@ -115,13 +115,8 @@ class BringBulkWindow(tk.Toplevel):
         bulk_entry = ttk.Entry(inner, textvariable=self.bulk_id_var, width=30, state="readonly")
         bulk_entry.pack(fill="x", pady=(4, 0))
 
-        ttk.Button(
-            inner, text="Avsluta bulk (starta nytt nästa vecka)",
-            command=self._do_clear_bulk
-        ).pack(anchor="w", pady=(8, 0))
-
-        # Slutför bulk
-        sec2 = self._section(main, "2. Slutför bulk (när pallen är packad)")
+        # Registrera pall
+        sec2 = self._section(main, "2. Registrera pall (när pallen är packad)")
         inner2 = tk.Frame(sec2, bg="white", padx=16, pady=12)
         inner2.pack(fill="x")
 
@@ -183,6 +178,20 @@ class BringBulkWindow(tk.Toplevel):
             main, text="Paket med BRING:0332 eller BRING:0342 använder bulk-ID ovan.",
             font=(_font(), 8), fg="#94a3b8", bg="#fafafa",
         ).pack(anchor="w", pady=(0, 8))
+
+        # Avsluta bulk — sist, efter registrering
+        sec3 = self._section(main, "3. Avsluta bulk (efter registrering)")
+        inner3 = tk.Frame(sec3, bg="white", padx=16, pady=12)
+        inner3.pack(fill="x")
+        tk.Label(
+            inner3,
+            text="Avslutar aktuellt bulk-ID, skapar Excel-backup och nollställer för nästa pall.",
+            font=(_font(), 8), fg="#64748b", bg="white", wraplength=420,
+        ).pack(anchor="w", pady=(0, 8))
+        ttk.Button(
+            inner3, text="Avsluta bulk (starta nytt nästa gång)",
+            command=self._do_clear_bulk
+        ).pack(anchor="w")
 
         self._update_bulk_id_display()
         self._schedule_parcel_refresh()
