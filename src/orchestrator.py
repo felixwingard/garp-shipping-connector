@@ -120,8 +120,10 @@ class ShipmentOrchestrator:
                 un_number=str(data.get("unNumber", "")).strip(),
                 adr_class=str(data.get("adrClass", "")).strip(),
                 packing_group=str(data.get("packingGroup", "")).strip().upper(),
+                proper_shipping_name=str(data.get("properShippingName", "")).strip(),
                 technical_name=str(data.get("technicalName", "")).strip(),
                 flash_point=str(data.get("flashPoint", "")).strip(),
+                quantity=str(data.get("quantity", "")).strip(),
             )
         except Exception as e:
             logger.warning(f"Kunde inte ladda {dg_path.name}: {e}")

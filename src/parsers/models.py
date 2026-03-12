@@ -58,8 +58,10 @@ class DangerousGoodsInfo:
     un_number: str = ""
     adr_class: str = ""
     packing_group: str = ""
+    proper_shipping_name: str = ""
     technical_name: str = ""
     flash_point: str = ""
+    quantity: str = ""
 
 
 @dataclass
