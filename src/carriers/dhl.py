@@ -74,7 +74,7 @@ ADDON_MAPPING = {
 # 210 (Pall): 701=EUR-pall, 702=halvpall
 # 211 (Stycke): PKT
 # GARP/Unifaun kan skicka "PC" (parcel) — DHL kräver PKT för standardkolli
-PACKAGE_CODE_NORMALIZE = {"PC": "PKT"}
+PACKAGE_CODE_NORMALIZE = {"PC": "PKT", "ZP": "701", "Z1": "702"}
 PACKAGE_TYPE_DEFAULTS = {
     "210": "701",  # EUR-pall
 }
@@ -1061,7 +1061,7 @@ class DHLClient(CarrierClient):
             parties.append(access_point)
 
         # Pakettyp — standardmappning per produktkod
-        raw_pkg = (container.package_code if container else "") or ""
+        raw_pkg = ((container.package_code if container else "") or "").upper()
         pkg_type = PACKAGE_CODE_NORMALIZE.get(raw_pkg, raw_pkg) or PACKAGE_TYPE_DEFAULTS.get(
             product_code, "PKT"
         )
