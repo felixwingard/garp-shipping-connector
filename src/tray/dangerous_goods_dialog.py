@@ -210,6 +210,19 @@ class DangerousGoodsDialog(tk.Toplevel):
         self.flash_point_var = tk.StringVar()
         self._field(card, "Flampunkt (°C)", self.flash_point_var, 16, "t.ex. 23")
 
+        f_tc = tk.Frame(card, bg="white")
+        f_tc.pack(fill="x", pady=(0, 6))
+        tk.Label(f_tc, text="Tunnelkod", font=(_font(), 9),
+                 fg="#334155", bg="white").pack(anchor="w")
+        self.tunnel_code_var = tk.StringVar()
+        ttk.Combobox(
+            f_tc, textvariable=self.tunnel_code_var,
+            values=["", "(B)", "(B/D)", "(B/E)", "(C)", "(C/D)", "(C/E)", "(D)", "(D/E)", "(E)", "(-)"],
+            width=12, state="readonly",
+        ).pack(anchor="w", pady=(2, 0))
+        tk.Label(f_tc, text="ADR-tunnelbegränsning — se kolumn 15 i tabell A",
+                 font=(_font(), 8), fg="#94a3b8", bg="white").pack(anchor="w")
+
         # --- Sidecar ---
         self.save_sidecar_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
@@ -312,6 +325,7 @@ class DangerousGoodsDialog(tk.Toplevel):
             proper_shipping_name=proper,
             technical_name=self.technical_name_var.get().strip(),
             flash_point=self.flash_point_var.get().strip(),
+            tunnel_code=self.tunnel_code_var.get().strip(),
             quantity=self.quantity_var.get().strip(),
         )
 
@@ -333,6 +347,7 @@ class DangerousGoodsDialog(tk.Toplevel):
                 "properShippingName": self._result.proper_shipping_name,
                 "technicalName": self._result.technical_name,
                 "flashPoint": self._result.flash_point,
+                "tunnelCode": self._result.tunnel_code,
                 "quantity": self._result.quantity,
             }
             dg_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

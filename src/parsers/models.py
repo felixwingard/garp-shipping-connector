@@ -61,6 +61,7 @@ class DangerousGoodsInfo:
     proper_shipping_name: str = ""
     technical_name: str = ""
     flash_point: str = ""
+    tunnel_code: str = ""
     quantity: str = ""
 
 

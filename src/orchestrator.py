@@ -123,6 +123,7 @@ class ShipmentOrchestrator:
                 proper_shipping_name=str(data.get("properShippingName", "")).strip(),
                 technical_name=str(data.get("technicalName", "")).strip(),
                 flash_point=str(data.get("flashPoint", "")).strip(),
+                tunnel_code=str(data.get("tunnelCode", "")).strip(),
                 quantity=str(data.get("quantity", "")).strip(),
             )
         except Exception as e:

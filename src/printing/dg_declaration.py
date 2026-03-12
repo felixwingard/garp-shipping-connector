@@ -147,6 +147,8 @@ def generate_adr_declaration(
          Paragraph(f"PG {dg.packing_group}" if dg.packing_group else "—", body)],
         [Paragraph("Flampunkt", label_style),
          Paragraph(flash or "—", body)],
+        [Paragraph("Tunnelrestriktionskod", label_style),
+         Paragraph(_safe(dg.tunnel_code) or "—", body)],
         [Paragraph("Antal kollin och beskrivning", label_style),
          Paragraph(container_desc, body_small)],
         [Paragraph("Total mängd", label_style),
