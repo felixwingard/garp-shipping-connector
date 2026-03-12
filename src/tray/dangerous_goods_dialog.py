@@ -12,8 +12,6 @@ from ..parsers.models import DangerousGoodsInfo
 
 logger = logging.getLogger(__name__)
 
-PAD = 20
-
 ADR_CLASSES = [
     "",
     "1 — Explosiva ämnen",
@@ -21,7 +19,7 @@ ADR_CLASSES = [
     "3 — Brandfarliga vätskor",
     "4.1 — Brandfarliga fasta ämnen",
     "4.2 — Självantändande ämnen",
-    "4.3 — Ämnen som avger brandfarlig gas vid kontakt med vatten",
+    "4.3 — Ämnen: brandfarlig gas vid vatten",
     "5.1 — Oxiderande ämnen",
     "5.2 — Organiska peroxider",
     "6.1 — Giftiga ämnen",
@@ -37,16 +35,11 @@ def _font():
 
 
 def _adr_class_value(display: str) -> str:
-    """Extracts the class code from display string like '3 — Brandfarliga vätskor'."""
     return display.split("—")[0].strip() if display else ""
 
 
 class DangerousGoodsDialog(tk.Toplevel):
-    """Dialog för att ange farligt gods (UN-nummer, ADR-klass, etc.).
-
-    Visas när DHL-sändning har DG-addon men saknar sidecar-fil.
-    Vid bekräftelse: returnerar DangerousGoodsInfo. Kan spara till sidecar.
-    """
+    """Dialog för att ange farligt gods (UN-nummer, ADR-klass, etc.)."""
 
     def __init__(
         self,
@@ -62,12 +55,11 @@ class DangerousGoodsDialog(tk.Toplevel):
         self._result: Optional[DangerousGoodsInfo] = None
 
         self.title(f"Farligt gods — order {order_no}")
-        self.geometry("520x560")
-        self.resizable(False, False)
+        self.minsize(480, 400)
         self.configure(bg="#fafafa")
 
-        self._center()
         self._build_ui()
+        self._center()
 
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
         self.focus_force()
@@ -75,152 +67,141 @@ class DangerousGoodsDialog(tk.Toplevel):
 
     def _center(self):
         self.update_idletasks()
-        w, h = 520, 560
+        w = self.winfo_reqwidth()
+        h = self.winfo_reqheight()
+        w = max(w, 500)
+        h = max(h, 580)
         x = (self.winfo_screenwidth() // 2) - (w // 2)
         y = (self.winfo_screenheight() // 2) - (h // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
 
     def _build_ui(self):
-        main = tk.Frame(self, bg="#fafafa", padx=PAD, pady=PAD)
-        main.pack(fill="both", expand=True)
+        # Scrollable canvas for Windows DPI scaling
+        canvas = tk.Canvas(self, bg="#fafafa", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
 
-        # Header
-        header = tk.Frame(main, bg="#fef2f2", highlightbackground="#fca5a5", highlightthickness=1)
-        header.pack(fill="x", pady=(0, 16))
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        main = tk.Frame(canvas, bg="#fafafa", padx=20, pady=16)
+        canvas_window = canvas.create_window((0, 0), window=main, anchor="nw")
+
+        def _on_frame_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(canvas_window, width=event.width)
+
+        def _on_mousewheel(event):
+            if platform.system() == "Darwin":
+                canvas.yview_scroll(int(-1 * event.delta), "units")
+            else:
+                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        main.bind("<Configure>", _on_frame_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+        canvas.bind("<MouseWheel>", _on_mousewheel)
+
+        # --- Header ---
+        hdr = tk.Frame(main, bg="#fef2f2", bd=1, relief="solid")
+        hdr.pack(fill="x", pady=(0, 12))
+        hdr_inner = tk.Frame(hdr, bg="#fef2f2", padx=12, pady=10)
+        hdr_inner.pack(fill="x")
         tk.Label(
-            header,
-            text=f"⚠  Order {self.order_no} — farligt gods",
+            hdr_inner,
+            text=f"Order {self.order_no} — farligt gods",
             font=(_font(), 11, "bold"),
             fg="#991b1b",
             bg="#fef2f2",
-            padx=12,
-            pady=10,
         ).pack(anchor="w")
         tk.Label(
-            header,
+            hdr_inner,
             text="Fyll i uppgifterna nedan. De används för bokning och ADR-godsdeklaration.",
             font=(_font(), 9),
             fg="#7f1d1d",
             bg="#fef2f2",
-            padx=12,
-            pady=(0, 10),
-        ).pack(anchor="w")
+            wraplength=440,
+        ).pack(anchor="w", pady=(4, 0))
 
-        # Form card
-        card = tk.Frame(main, bg="white", highlightbackground="#e5e7eb", highlightthickness=1)
-        card.pack(fill="x", pady=(0, 16))
-        form = tk.Frame(card, bg="white", padx=16, pady=12)
-        form.pack(fill="x")
+        # --- Form ---
+        card = tk.LabelFrame(main, text="  ADR-uppgifter  ", font=(_font(), 9, "bold"),
+                             bg="white", fg="#334155", padx=14, pady=10)
+        card.pack(fill="x", pady=(0, 12))
 
-        # UN-nummer
         self.un_number_var = tk.StringVar()
-        self._field(form, "UN-nummer *", self.un_number_var, width=14, placeholder="t.ex. 1987")
+        self._field(card, "UN-nummer *", self.un_number_var, 16, "t.ex. 1987")
 
-        # Officiell transportbenämning
         self.proper_name_var = tk.StringVar()
-        self._field(form, "Officiell transportbenämning *", self.proper_name_var, width=36,
-                    placeholder="t.ex. ALCOHOLS, N.O.S.")
+        self._field(card, "Officiell transportbenämning *", self.proper_name_var, 40,
+                    "t.ex. ALCOHOLS, N.O.S.")
 
-        # ADR-klass
+        # ADR-klass dropdown
+        f_adr = tk.Frame(card, bg="white")
+        f_adr.pack(fill="x", pady=(0, 6))
+        tk.Label(f_adr, text="ADR-klass *", font=(_font(), 9, "bold"),
+                 fg="#334155", bg="white").pack(anchor="w")
         self.adr_class_var = tk.StringVar()
-        f = tk.Frame(form, bg="white")
-        f.pack(fill="x", pady=(0, 8))
-        tk.Label(f, text="ADR-klass *", font=(_font(), 9, "bold"), fg="#334155", bg="white").pack(anchor="w")
-        adr_combo = ttk.Combobox(
-            f,
-            textvariable=self.adr_class_var,
-            values=ADR_CLASSES,
-            width=44,
-            state="readonly",
-        )
-        adr_combo.pack(anchor="w", pady=(2, 0))
+        ttk.Combobox(
+            f_adr, textvariable=self.adr_class_var,
+            values=ADR_CLASSES, width=42, state="readonly",
+        ).pack(anchor="w", pady=(2, 0))
 
-        # Packningsgrupp
+        # Förpackningsgrupp dropdown
+        f_pg = tk.Frame(card, bg="white")
+        f_pg.pack(fill="x", pady=(0, 6))
+        tk.Label(f_pg, text="Förpackningsgrupp", font=(_font(), 9),
+                 fg="#334155", bg="white").pack(anchor="w")
         self.packing_group_var = tk.StringVar()
-        f2 = tk.Frame(form, bg="white")
-        f2.pack(fill="x", pady=(0, 8))
-        tk.Label(f2, text="Förpackningsgrupp", font=(_font(), 9, "bold"), fg="#334155", bg="white").pack(anchor="w")
-        pg_combo = ttk.Combobox(
-            f2,
-            textvariable=self.packing_group_var,
+        ttk.Combobox(
+            f_pg, textvariable=self.packing_group_var,
             values=["", "I — Hög fara", "II — Medel fara", "III — Låg fara"],
-            width=24,
-            state="readonly",
-        )
-        pg_combo.pack(anchor="w", pady=(2, 0))
+            width=26, state="readonly",
+        ).pack(anchor="w", pady=(2, 0))
 
-        # Teknisk benämning
         self.technical_name_var = tk.StringVar()
-        self._field(form, "Teknisk benämning (n.o.s.)", self.technical_name_var, width=36,
-                    placeholder="t.ex. Etanol")
+        self._field(card, "Teknisk benämning (n.o.s.)", self.technical_name_var, 40, "t.ex. Etanol")
 
-        # Mängd / antal
         self.quantity_var = tk.StringVar()
-        self._field(form, "Nettomängd", self.quantity_var, width=20,
-                    placeholder="t.ex. 200 liter")
+        self._field(card, "Nettomängd", self.quantity_var, 22, "t.ex. 200 liter")
 
-        # Flashpunkt
         self.flash_point_var = tk.StringVar()
-        self._field(form, "Flampunkt (°C)", self.flash_point_var, width=14,
-                    placeholder="t.ex. 23")
+        self._field(card, "Flampunkt (°C)", self.flash_point_var, 16, "t.ex. 23")
 
-        # Sidecar checkbox
+        # --- Sidecar ---
         self.save_sidecar_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(
-            main,
-            text="Spara för framtida sändningar med samma order",
+            main, text="Spara för framtida sändningar med samma order",
             variable=self.save_sidecar_var,
-        ).pack(anchor="w", pady=(0, 16))
+        ).pack(anchor="w", pady=(4, 12))
 
-        # Buttons
+        # --- Buttons ---
         btn_f = tk.Frame(main, bg="#fafafa")
-        btn_f.pack(fill="x")
+        btn_f.pack(fill="x", pady=(0, 8))
 
-        cancel_btn = tk.Button(
-            btn_f,
-            text="Avbryt",
-            font=(_font(), 10),
-            fg="#374151",
-            bg="#f3f4f6",
-            activebackground="#e5e7eb",
-            relief="flat",
-            padx=20,
-            pady=8,
-            cursor="hand2",
-            command=self._on_cancel,
-        )
-        cancel_btn.pack(side="left")
+        cancel_btn = ttk.Button(btn_f, text="Avbryt", command=self._on_cancel)
+        cancel_btn.pack(side="left", padx=(0, 12))
 
-        ok_btn = tk.Button(
-            btn_f,
-            text="Bekräfta och boka",
-            font=(_font(), 10, "bold"),
-            fg="white",
-            bg="#1d4ed8",
-            activebackground="#1e40af",
-            relief="flat",
-            padx=24,
-            pady=8,
-            cursor="hand2",
-            command=self._on_ok,
-        )
+        ok_btn = ttk.Button(btn_f, text="  Bekräfta och boka  ", command=self._on_ok)
         ok_btn.pack(side="right")
 
-    def _field(self, parent, label: str, var: tk.StringVar, width: int = 30, placeholder: str = ""):
+        # Gör OK-knappen grön/framträdande via style
+        style = ttk.Style()
+        style.configure("Accent.TButton", font=(_font(), 10, "bold"))
+        ok_btn.configure(style="Accent.TButton")
+
+    def _field(self, parent, label: str, var: tk.StringVar, width: int = 30, hint: str = ""):
         f = tk.Frame(parent, bg="white")
-        f.pack(fill="x", pady=(0, 8))
-        required = "*" in label
+        f.pack(fill="x", pady=(0, 6))
+        is_required = "*" in label
         tk.Label(
-            f, text=label, font=(_font(), 9, "bold" if required else ""),
+            f, text=label,
+            font=(_font(), 9, "bold") if is_required else (_font(), 9),
             fg="#334155", bg="white",
         ).pack(anchor="w")
-        entry = ttk.Entry(f, textvariable=var, width=width)
-        entry.pack(anchor="w", pady=(2, 0))
-        if placeholder:
-            tk.Label(
-                f, text=placeholder, font=(_font(), 8),
-                fg="#94a3b8", bg="white",
-            ).pack(anchor="w")
+        ttk.Entry(f, textvariable=var, width=width).pack(anchor="w", pady=(2, 0))
+        if hint:
+            tk.Label(f, text=hint, font=(_font(), 8), fg="#94a3b8", bg="white").pack(anchor="w")
 
     def _on_ok(self):
         un = self.un_number_var.get().strip()
@@ -231,7 +212,7 @@ class DangerousGoodsDialog(tk.Toplevel):
         proper = self.proper_name_var.get().strip()
         if not proper:
             messagebox.showwarning("Transportbenämning krävs",
-                                   "Ange officiell transportbenämning (t.ex. ALCOHOLS, N.O.S.).", parent=self)
+                                   "Ange officiell transportbenämning.", parent=self)
             return
 
         adr = _adr_class_value(self.adr_class_var.get())
@@ -243,18 +224,15 @@ class DangerousGoodsDialog(tk.Toplevel):
         pg = pg_raw.split("—")[0].strip().upper() if pg_raw else ""
         if pg and pg not in ("I", "II", "III"):
             pg = ""
-        tech = self.technical_name_var.get().strip()
-        flash = self.flash_point_var.get().strip()
-        qty = self.quantity_var.get().strip()
 
         self._result = DangerousGoodsInfo(
             un_number=un,
             adr_class=adr,
             packing_group=pg,
             proper_shipping_name=proper,
-            technical_name=tech,
-            flash_point=flash,
-            quantity=qty,
+            technical_name=self.technical_name_var.get().strip(),
+            flash_point=self.flash_point_var.get().strip(),
+            quantity=self.quantity_var.get().strip(),
         )
 
         if self.save_sidecar_var.get() and self.xml_filepath.exists():
@@ -265,7 +243,6 @@ class DangerousGoodsDialog(tk.Toplevel):
         self.destroy()
 
     def _save_sidecar(self):
-        """Sparar DG-data till {xml_stem}_dg.json."""
         try:
             stem = self.xml_filepath.stem
             dg_path = self.xml_filepath.parent / f"{stem}_dg.json"
@@ -290,5 +267,4 @@ class DangerousGoodsDialog(tk.Toplevel):
         self.destroy()
 
     def get_result(self) -> Optional[DangerousGoodsInfo]:
-        """Returnerar angivet DangerousGoodsInfo eller None vid avbryt."""
         return self._result
