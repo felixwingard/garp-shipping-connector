@@ -476,6 +476,30 @@ class ShipmentOrchestrator:
 
         logger.info(f"  KLAR: Order {shipment.order_no}, tracking: {tracking}")
 
+        # Sändningslogg (Excel)
+        try:
+            from .utils.shipment_log import append_shipment
+            rec = shipment.receiver
+            container = shipment.containers[0] if shipment.containers else None
+            append_shipment(
+                order_no=shipment.order_no,
+                tracking=tracking,
+                carrier=carrier.value,
+                product_code=shipment.service.product_code if shipment.service else "",
+                receiver_name=rec.name if rec else "",
+                receiver_address=((rec.address1 or "") + (" " + rec.address2 if rec and rec.address2 else "")).strip() if rec else "",
+                receiver_zipcode=rec.zipcode if rec else "",
+                receiver_city=rec.city if rec else "",
+                receiver_country=rec.country if rec else "",
+                receiver_email=rec.email if rec else "",
+                receiver_phone=rec.phone if rec else "",
+                weight_kg=sum(c.weight or 0 for c in shipment.containers) if shipment.containers else 0,
+                copies=sum(c.copies for c in shipment.containers) if shipment.containers else 1,
+                estimated_price=estimated_price,
+            )
+        except Exception as e:
+            logger.debug(f"Sändningslogg: {e}")
+
         # Notifiera tray UI
         event_data = {
             "order_no": shipment.order_no,
