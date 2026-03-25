@@ -337,23 +337,27 @@ class ShipmentOrchestrator:
                 f"Stödda: DHL, Bring"
             )
 
-        # 3. Skriv ut etikett (→ Zebra)
+        # 3. Spara alla dokument till label_cache (för omskrivning)
+        try:
+            cache_path = self.label_cache / f"{shipment.order_no}_etikett.pdf"
+            cache_path.write_bytes(label_data)
+        except Exception as e:
+            logger.debug(f"  Kunde inte spara etikett till cache: {e}")
+
+        # 3b. Skriv ut etikett (→ Zebra)
         printed = self.printer.print_label(label_data, "pdf", shipment.order_no)
         print_failed = False
         if not printed:
             print_failed = True
             logger.warning(f"  Etikett-utskrift misslyckades för {shipment.order_no}")
-            # Spara till label_cache så användaren kan skriva ut manuellt
-            try:
-                cache_path = self.label_cache / f"{shipment.order_no}_etikett.pdf"
-                cache_path.write_bytes(label_data)
-                logger.info(f"  Etikett sparad i {cache_path} — skriv ut manuellt")
-            except Exception as e:
-                logger.warning(f"  Kunde inte spara etikett till cache: {e}")
 
         # 4. Skriv ut fraktlista/CMR (→ A4) om den finns + produkt kräver utskrift (t.ex. pall)
         # print_document_for_products: [202, 210, 205] = endast pall etc. [] = aldrig. Saknas = alltid.
         if shipment_list:
+            try:
+                (self.label_cache / f"{shipment.order_no}_fraktlista.pdf").write_bytes(shipment_list)
+            except Exception:
+                pass
             prod_codes = self.config.get("printers", {}).get("print_document_for_products")
             if prod_codes is None:
                 do_print = True  # Nyckel saknas = bakåtkompatibelt
@@ -392,6 +396,10 @@ class ShipmentOrchestrator:
                     dg_pdf = generate_adr_declaration(
                         shipment, dg, self.config["sender"]
                     )
+                    try:
+                        (self.label_cache / f"{shipment.order_no}_ADR.pdf").write_bytes(dg_pdf)
+                    except Exception:
+                        pass
                     dg_printed = self.printer.print_document(
                         dg_pdf, "pdf", f"{shipment.order_no}_ADR"
                     )

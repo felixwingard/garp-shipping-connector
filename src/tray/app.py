@@ -60,6 +60,7 @@ class TrayApp:
         self._settings_window = None
         self._status_window = None
         self._bring_bulk_window = None
+        self._reprint_window = None
 
         # Shipment-historik för statusfönstret
         self.shipment_history: list[dict] = []
@@ -197,6 +198,8 @@ class TrayApp:
             self._show_status()
         elif action == "show_bring_bulk":
             self._show_bring_bulk()
+        elif action == "show_reprint":
+            self._show_reprint()
         elif action == "quit":
             self.quit()
         elif action == "shipment_event":
@@ -251,6 +254,10 @@ class TrayApp:
             pystray.MenuItem(
                 "Bring Bulk (Norge)",
                 lambda icon, item: self._queue.put({"action": "show_bring_bulk"}),
+            ),
+            pystray.MenuItem(
+                "Skriv ut igen",
+                lambda icon, item: self._queue.put({"action": "show_reprint"}),
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
@@ -417,6 +424,16 @@ class TrayApp:
             self.config,
             on_bulk_id_reserved=self._on_bulk_id_reserved,
         )
+
+    def _show_reprint(self):
+        """Visar dialogen för att skriva ut etiketter/dokument igen."""
+        if self._reprint_window and self._reprint_window.winfo_exists():
+            self._reprint_window.lift()
+            self._reprint_window.focus_force()
+            return
+
+        from .reprint_dialog import ReprintDialog
+        self._reprint_window = ReprintDialog(self.root, self.config)
 
     def _get_dangerous_goods_callback(self, shipment: Shipment, filepath: Path) -> Optional[DangerousGoodsInfo]:
         """Callback för orchestrator — blockerar tills användaren fyllt i DG-dialog."""
