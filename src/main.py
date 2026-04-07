@@ -6,11 +6,37 @@ Kan köras som:
 3. Windows-tjänst: GarpShippingConnector.exe install/start/stop/remove
 """
 
+import subprocess
 import sys
 import platform
 
 
+_REQUIRED_PACKAGES = {
+    "openpyxl": "openpyxl",
+    "reportlab": "reportlab",
+    "requests": "requests",
+    "yaml": "pyyaml",
+    "watchdog": "watchdog",
+}
+
+
+def _ensure_packages():
+    """Installerar saknade Python-paket automatiskt vid uppstart."""
+    missing = []
+    for module, pip_name in _REQUIRED_PACKAGES.items():
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(pip_name)
+    if missing:
+        print(f"Installerar saknade paket: {', '.join(missing)}")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet"] + missing
+        )
+
+
 def main():
+    _ensure_packages()
     args = sys.argv[1:]
 
     # Windows-tjänstkommandon: install, start, stop, remove
