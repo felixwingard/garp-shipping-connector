@@ -66,7 +66,7 @@ def append_shipment(
         from openpyxl import Workbook, load_workbook
         from openpyxl.styles import Font, PatternFill, Alignment
     except ImportError:
-        logger.debug("openpyxl saknas — sändningslogg hoppas över")
+        logger.warning("openpyxl saknas — kör 'pip install openpyxl' för sändningslogg")
         return
 
     with _LOCK:

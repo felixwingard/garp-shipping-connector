@@ -506,7 +506,7 @@ class ShipmentOrchestrator:
                 estimated_price=estimated_price,
             )
         except Exception as e:
-            logger.debug(f"Sändningslogg: {e}")
+            logger.warning(f"Sändningslogg kunde inte sparas: {e}")
 
         # Notifiera tray UI
         event_data = {
