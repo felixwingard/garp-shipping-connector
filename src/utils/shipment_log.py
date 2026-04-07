@@ -20,6 +20,7 @@ _HEADERS = [
     "Datum",
     "Ordernr",
     "Spårningsnummer",
+    "Spårningslänk",
     "Transportör",
     "Produkt",
     "Mottagare",
@@ -35,9 +36,14 @@ _HEADERS = [
 ]
 
 _COL_WIDTHS = {
-    "A": 18, "B": 18, "C": 26, "D": 12, "E": 10,
-    "F": 24, "G": 28, "H": 12, "I": 16, "J": 8,
-    "K": 10, "L": 8, "M": 24, "N": 16, "O": 12,
+    "A": 18, "B": 18, "C": 26, "D": 34, "E": 12, "F": 10,
+    "G": 24, "H": 28, "I": 12, "J": 16, "K": 8,
+    "L": 10, "M": 8, "N": 24, "O": 16, "P": 12,
+}
+
+_TRACKING_URLS = {
+    "DHL": "https://www.dhl.com/se-sv/home/tracking.html?tracking-id={tracking}",
+    "Bring": "https://tracking.bring.se/tracking/{tracking}",
 }
 
 
@@ -72,10 +78,19 @@ def append_shipment(
     with _LOCK:
         path = _log_path()
         datestr = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        tracking_url = ""
+        carrier_upper = (carrier or "").upper()
+        for key, template in _TRACKING_URLS.items():
+            if key.upper() in carrier_upper:
+                tracking_url = template.format(tracking=tracking)
+                break
+
         row_data = [
             datestr,
             order_no,
             tracking,
+            "Spåra försändelse",
             carrier,
             product_code,
             receiver_name,
@@ -99,7 +114,6 @@ def append_shipment(
                 wb = Workbook()
                 ws = wb.active
                 ws.title = "Sändningar"
-                header_font = Font(bold=True, size=11)
                 header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
                 header_text = Font(bold=True, size=11, color="FFFFFF")
                 for col, h in enumerate(_HEADERS, 1):
@@ -109,9 +123,14 @@ def append_shipment(
                     cell.alignment = Alignment(horizontal="center")
                 for letter, width in _COL_WIDTHS.items():
                     ws.column_dimensions[letter].width = width
-                ws.auto_filter.ref = f"A1:O1"
+                ws.auto_filter.ref = f"A1:P1"
                 ws.freeze_panes = "A2"
                 ws.append(row_data)
+
+            if tracking_url:
+                link_cell = ws.cell(row=ws.max_row, column=4)
+                link_cell.hyperlink = tracking_url
+                link_cell.font = Font(color="0563C1", underline="single")
 
             wb.save(path)
             wb.close()
