@@ -24,6 +24,7 @@ Referens: DHL Produktmanual v5.23
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -136,13 +137,14 @@ def format_sender_name(name: str) -> str:
 def clean_postal_code(zipcode: str, country: str = "") -> str:
     """Rensar postnummer från landskod-prefix.
 
-    GARP kan exportera postnummer som t.ex. "DK-5220" eller "NO-1234".
-    DHL API vill bara ha siffror: "5220".
+    GARP kan exportera postnummer som t.ex. "DK-5220", "NL3961", "PL 74-320".
+    DHL API vill bara ha postnumret utan landskod.
     """
-    cleaned = zipcode.strip()
-    # Ta bort landskod-prefix (t.ex. "DK-", "NO-", "FI-")
-    if len(cleaned) > 3 and cleaned[2] == "-" and cleaned[:2].isalpha():
-        cleaned = cleaned[3:]
+    cleaned = zipcode.strip().replace(" ", "")
+    # Ta bort landskod-prefix: "DK-5220" → "5220", "NL3961" → "3961"
+    m = re.match(r"^([A-Za-z]{2})[\-]?(.*)", cleaned)
+    if m:
+        cleaned = m.group(2)
     return cleaned
 
 
@@ -1053,8 +1055,8 @@ class DHLClient(CarrierClient):
                     "postalCode": recv_zip,
                     "countryCode": recv.country or "SE",
                 },
-                "phone": recv.phone,
-                "email": recv.email,
+                "phone": recv.phone or self.sender.get("phone", ""),
+                "email": recv.email or self.sender.get("email", ""),
             },
         ]
         if access_point:

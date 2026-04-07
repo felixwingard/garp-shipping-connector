@@ -93,20 +93,58 @@ class GarpXMLParser:
         elif addr1 and addr2:
             addr1 = f"{addr1}, {addr2}"  # Båda har innehåll → kombinerat som street
             addr2 = ""
-        country = vals.get("country", "").strip()
+        country = vals.get("country", "").strip().upper()
         zipcode_raw = vals.get("zipcode", "").strip()
         zipcode = zipcode_raw.replace(" ", "").upper()
         city = (vals.get("city", "") or "").strip()
-        # GARP kolumnfel: zipcode "0582 O", city "SLO" — flytta O tillbaka till city → OSLO
-        if re.match(r"^\d{4}\s+[A-Za-z]$", zipcode_raw):
+
+        # Landskod-prefix i postnummer: "DK-265", "NL3961", "PL74-3" etc.
+        # Hanterar format XX-NNN, XXNNN, XX NNN (mellanslag borttaget ovan)
+        prefix_country = ""
+        zip_digits = zipcode
+        prefix_m = re.match(r"^([A-Z]{2})[\-]?(.*)", zipcode)
+        if prefix_m:
+            prefix_country = prefix_m.group(1)
+            zip_digits = prefix_m.group(2)
+            if not country:
+                country = prefix_country
+
+        # GARP kolumnfel: sista tecken i postnummer hamnar i city-fältet.
+        # Fall 1 (Norge utan prefix): zipcode "0582 O", city "SLO" → zip 0582, city OSLO
+        if not prefix_country and re.match(r"^\d{4}\s+[A-Za-z]$", zipcode_raw):
             letter = zipcode_raw[-1].upper()
             city = (letter + city.lstrip()).strip() if city else letter
-            zipcode_raw = zipcode_raw[:4].strip()
-            zipcode = zipcode_raw
-        # GARP kan lämna country tomt — gissa från postnummer (N-0582 = Norge, 4 siffror)
-        z = zipcode.replace(" ", "")
-        if not country and (zipcode.startswith("N-") or (len(z) == 4 and z.isdigit())):
-            country = "NO"
+            zip_digits = zipcode_raw[:4].strip()
+
+        # Fall 2 (Utland med prefix): Flytta siffror från city till postnummer
+        # "DK-265" + "0 HVIDOVRE" → "2650" + "HVIDOVRE"
+        # "PL74-3" + "20 BARLINEK" → "74-320" + "BARLINEK"
+        if prefix_country and city:
+            zip_pure_digits = sum(1 for c in zip_digits if c.isdigit())
+            if zip_pure_digits < 4 and re.match(r"^\d+\s", city):
+                m = re.match(r"^(\d+)\s+(.*)", city)
+                if m:
+                    zip_digits = zip_digits + m.group(1)
+                    city = m.group(2).strip()
+            elif zip_pure_digits == 4 and re.match(r"^(\d)\s+\D", city):
+                m = re.match(r"^(\d)\s+(.*)", city)
+                if m:
+                    zip_digits = zip_digits + m.group(1)
+                    city = m.group(2).strip()
+
+        # Spara utan landskod-prefix (DHL vill bara ha siffror/postnummer)
+        if prefix_country:
+            zipcode_raw = zip_digits
+        elif zip_digits != zipcode:
+            zipcode_raw = zip_digits
+
+        zipcode = zip_digits
+
+        # GARP kan lämna country tomt — gissa från postnummer
+        if not country:
+            z = zipcode.replace(" ", "")
+            if z.startswith("N-") or (len(z) == 4 and z.isdigit()):
+                country = "NO"
         return Receiver(
             rcvid=elem.get("rcvid", "").strip(),
             name=vals.get("name", ""),
