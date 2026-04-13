@@ -106,6 +106,8 @@ DHL_PRODUCT_CODE_FOR_QUOTE = {
     "109": "DHLParcelConnect",
     "112": "DHLParcelConnect",  # Parcel Connect Plus (internationellt B2B)
     "118": "118",  # DHL Hemleverans Paket (inrikes B2C)
+    "401": "401",  # DHL Home Delivery (inrikes B2C, större/stycke)
+    "501": "501",  # DHL Home Delivery variant (avtalsberoende)
     "202": "DHLEuroconnect",
     "205": "DHLEuroline",
     "210": "DHLPall",
