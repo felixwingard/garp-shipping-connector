@@ -92,10 +92,19 @@ PAYER_CODE_BY_PRODUCT = {
     "205": "DDP",  # Euroline (utrikes)
 }
 
-# Internationella produkter — använder ALLTID internationellt kundnummer
-# (customer_number_dhl_international), oavsett om mottagarlandet ligger i domestic_countries.
-# domestic_countries styr enbart inrikesprodukter som 102/103/210/211.
-INTERNATIONAL_PRODUCTS = {"109", "112", "202", "205"}
+# Kundnummer-mappning per produkt (enligt DHL 2026-06):
+#   101733 (customer_number_dhl)              = inrikesfrakter + utrikes pakettjänster
+#                                               Parcel Connect (109) & Parcel Connect Plus (112).
+#   20193498.SE0001 (..._international)        = utrikesfrakter Road Freight (Euroconnect 202 /
+#                                               Euroline 205), Home Delivery International samt
+#                                               Easy Pallet (SPI/PPI). Större gods, pall & import.
+#
+# DOMESTIC_ACCOUNT_PRODUCTS bokas ALLTID på inrikeskundnumret även när mottagaren ligger
+# utomlands (Parcel Connect är en exporttjänst på inrikeskontot).
+# INTERNATIONAL_PRODUCTS bokas ALLTID på det internationella kundnumret.
+# Övriga produkter (102/103/118/210/211 …) styrs av domestic_countries.
+DOMESTIC_ACCOUNT_PRODUCTS = {"109", "112"}
+INTERNATIONAL_PRODUCTS = {"202", "205", "SPI", "PPI"}
 
 # PriceQuote API: dhlProductCode (Swagger ShipmentModel)
 # Paket 102/103: använd numerisk kod (DHL:s exempel: quoteforgrossprice med "103")
@@ -186,6 +195,22 @@ class DHLClient(CarrierClient):
         # Cache av transportInstruction-svar (behövs för Print API)
         # Nyckel: shipment_id (str), värde: dict (hela TI-objektet)
         self._ti_cache: dict[str, dict] = {}
+
+    def _consignor_id(self, product_code: str, recv_country: str) -> str:
+        """Väljer DHL-kundnummer (Consignor id) för en produkt/mottagarland.
+
+        Parcel Connect (109/112) bokas alltid på inrikeskundnumret (export på
+        inrikeskontot). Road Freight/Easy Pallet (202/205/SPI/PPI) bokas alltid
+        på det internationella kundnumret. Övriga produkter styrs av
+        domestic_countries — inrikeskundnr för Norden, annars internationellt.
+        """
+        if product_code in DOMESTIC_ACCOUNT_PRODUCTS:
+            return self.customer_number
+        if product_code in INTERNATIONAL_PRODUCTS:
+            return self.customer_number_international
+        if recv_country.upper() in self._domestic_countries:
+            return self.customer_number
+        return self.customer_number_international
 
     def _create_session(self, config: dict) -> requests.Session:
         session = requests.Session()
@@ -572,15 +597,7 @@ class DHLClient(CarrierClient):
         pkg_type = container.package_code if container else "PKT"
 
         recv_country = (recv.country or "SE").upper()
-        use_domestic = (
-            recv_country in self._domestic_countries
-            and product_code not in INTERNATIONAL_PRODUCTS
-        )
-        consignor_id = (
-            self.customer_number
-            if use_domestic
-            else self.customer_number_international
-        )
+        consignor_id = self._consignor_id(product_code, recv_country)
         # Utrikes kräver ofta DDP; inrikes använder 1
         payer = (
             PAYER_CODE_BY_PRODUCT.get(product_code)
@@ -1019,18 +1036,11 @@ class DHLClient(CarrierClient):
                     f"nära {recv_zip}. Produkt {product_code} kräver ServicePoint."
                 )
 
-        # Consignor id: internationella produkter (109/112/202/205) använder ALLTID
-        # internationellt kundnr. Övriga (102/103/210/211) baseras på domestic_countries.
+        # Consignor id: Parcel Connect (109/112) → inrikeskundnr, Road Freight/
+        # Easy Pallet (202/205/SPI/PPI) → internationellt kundnr, övriga styrs av
+        # domestic_countries. Se _consignor_id().
         recv_country = (recv.country or "SE").upper()
-        use_domestic = (
-            recv_country in self._domestic_countries
-            and product_code not in INTERNATIONAL_PRODUCTS
-        )
-        consignor_id = (
-            self.customer_number
-            if use_domestic
-            else self.customer_number_international
-        )
+        consignor_id = self._consignor_id(product_code, recv_country)
 
         # Parties — address MÅSTE vara nested objekt
         parties = [

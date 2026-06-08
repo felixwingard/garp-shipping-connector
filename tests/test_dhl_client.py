@@ -204,7 +204,7 @@ class TestBuildTransportInstruction:
         assert payload["payerCode"]["code"] == "DDP"
 
     def test_consignor_id_international(self, client, sample_shipment):
-        """Utrikes (mottagarland != SE) använder customer_number_dhl_international."""
+        """Inrikesprodukt (102) till utrikes land använder internationellt kundnr."""
         sample_shipment.receiver.country = "DE"
         payload = client._build_transport_instruction(sample_shipment)
         consignor = next(p for p in payload["parties"] if p.get("type") == "Consignor")
@@ -217,6 +217,34 @@ class TestBuildTransportInstruction:
             payload = client._build_transport_instruction(sample_shipment)
             consignor = next(p for p in payload["parties"] if p.get("type") == "Consignor")
             assert consignor["id"] == "101733", f"Expected 101733 for {country}"
+
+    def test_consignor_id_parcel_connect_uses_domestic_number(self, client, sample_shipment):
+        """Parcel Connect (109/112) bokas ALLTID på inrikeskundnr 101733, även utrikes.
+
+        DHL: kundnr 101733 = inrikes + utrikes pakettjänster Parcel Connect & Plus.
+        """
+        for product in ("109", "112"):
+            sample_shipment.service.product_code = product
+            for country in ("DE", "FR", "PL", "SE"):
+                sample_shipment.receiver.country = country
+                payload = client._build_transport_instruction(sample_shipment)
+                consignor = next(p for p in payload["parties"] if p.get("type") == "Consignor")
+                assert consignor["id"] == "101733", (
+                    f"Parcel Connect {product} till {country} ska använda 101733"
+                )
+
+    def test_consignor_id_road_freight_uses_international_number(self, client, sample_shipment):
+        """Road Freight/Easy Pallet (202/205/SPI/PPI) bokas ALLTID på 20193498.SE0001."""
+        for product in ("202", "205", "SPI", "PPI"):
+            sample_shipment.service.product_code = product
+            # Även mot ett domestic_country ska internationellt kundnr användas.
+            for country in ("DK", "DE"):
+                sample_shipment.receiver.country = country
+                payload = client._build_transport_instruction(sample_shipment)
+                consignor = next(p for p in payload["parties"] if p.get("type") == "Consignor")
+                assert consignor["id"] == "20193498.SE0001", (
+                    f"{product} till {country} ska använda 20193498.SE0001"
+                )
 
     def test_booking_date_as_shipping_date(self, client, sample_shipment):
         """Om bokning finns, anvand pickup_date som shippingDate."""
