@@ -78,17 +78,45 @@ printers:
 # SMTP (Loopia) — för kundmail med spårningslänk
 # Skapa adressen no-reply@ernstp.se i Loopia (eller använd befintlig).
 smtp:
-  host: "mailcluster.loopia.se"
-  port: 587
-  username: "${SMTP_USERNAME}"         # Sätt som miljövariabel
-  password: "${SMTP_PASSWORD}"         # Sätt som miljövariabel
+  # REKOMMENDERAT: skicka via Resend (samma avsändare som orderbekräftelserna →
+  # en linjerad SPF/DKIM/DMARC + ett ställe att övervaka, mindre spam-risk).
+  # Resend har en SMTP-gateway så den rika mallen + PDF-bilagorna funkar oförändrat.
+  host: "smtp.resend.com"
+  port: 587                            # STARTTLS (alt. 465 med SSL)
+  username: "resend"                   # alltid literalt "resend" för Resend SMTP
+  password: "${RESEND_API_KEY}"        # Resend API-nyckel (samma domän redan verifierad)
   use_tls: true
-  from_address: "${SMTP_FROM_ADDRESS}"  # Rekommenderat: no-reply@ernstp.se (automatmail)
+  from_address: "no-reply@ernstp.se"   # @verifierad-domän i Resend
   from_name: "Ernst P AB"
+  # ALTERNATIV (gammalt): Loopia-SMTP —
+  #   host: "mailcluster.loopia.se"
+  #   username: "${SMTP_USERNAME}"
+  #   password: "${SMTP_PASSWORD}"
+  #   from_address: "${SMTP_FROM_ADDRESS}"
   # Länk till Google-omdöme (visas i mailet om satt)
   google_review_url: "https://www.google.com/maps/place//data=!4m3!3m2!1s0x464ff3ba65497121:0x4df5d9552fab788a!12e1?source=g.page.m._&laa=merchant-review-solicitation"
   company_contact_email: "info@ernstp.se"
   company_contact_phone: "031-703 07 70"
+
+# Medusa-integration (valfri) — pusha shipment + tracking till webshoppen.
+# För Garp-ordrar med nummer "W{display_id}" (webshop) skapas en fulfillment +
+# shipment i Medusa med trackingnumret. Då skickar Medusa "Din order är skickad"-
+# mailet via Resend (med spårningslänk) och kunden ser leveransen i Mitt konto —
+# och connectorns eget SMTP-mail hoppas över för just den ordern. Övriga ordrar
+# (telefon/B2B utan W-prefix) → vanligt SMTP-mail som förr.
+medusa:
+  enabled: false                                  # true för att slå på
+  order_prefix: "#"                               # MÅSTE matcha C#-servicens order_serie.
+                                                  # C#-servicen kör order_serie=# → Garp-ordernr
+                                                  # blir #70427. "#" skiljer dem från gamla Woo
+                                                  # "W…"-ordrar (de ignoreras → ingen krock).
+  base_url: "https://api.ernstp.se"               # prod; staging: https://api-staging.ernstp.se
+  email: "${MEDUSA_ADMIN_EMAIL}"                  # admin-user för servicen
+  password: "${MEDUSA_ADMIN_PASSWORD}"
+  timeout_seconds: 20
+  # extra_headers: behövs bara mot STAGING (basic-auth-bypass). Lämna tomt i prod.
+  # extra_headers:
+  #   X-Garp-Bridge: "gb_stg_8f3c1a9e4d7b2056"
 
 # Mappbevakning
 watcher:

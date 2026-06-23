@@ -26,6 +26,7 @@ from .carriers.dhl import DHLClient
 from .carriers.bring import BringClient
 from .printing.printer import LabelPrinter
 from .notifications.email_sender import EmailSender
+from .integrations.medusa_client import MedusaClient
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,27 @@ class ShipmentOrchestrator:
         self.printer = LabelPrinter(printer_config)
 
         self.emailer = EmailSender(config["smtp"])
+
+        # Medusa-integration (valfri): pusha shipment + tracking till webshoppen
+        # för W{display_id}-ordrar → kunden får frakt-mail via Resend + spårning
+        # i Mitt konto. Saknas config-sektionen kör connectorn precis som förr
+        # (bara SMTP). Misslyckad init eller push → SMTP-fallback, aldrig stopp.
+        self.medusa = None
+        medusa_cfg = config.get("medusa") or {}
+        if medusa_cfg.get("enabled", False) and medusa_cfg.get("base_url"):
+            try:
+                self.medusa = MedusaClient(
+                    base_url=medusa_cfg["base_url"],
+                    email=medusa_cfg["email"],
+                    password=medusa_cfg["password"],
+                    order_prefix=medusa_cfg.get("order_prefix", "W"),
+                    extra_headers=medusa_cfg.get("extra_headers") or {},
+                    timeout=int(medusa_cfg.get("timeout_seconds", 20)),
+                )
+                logger.info("Medusa-integration aktiv: %s", medusa_cfg["base_url"])
+            except Exception as e:  # noqa: BLE001
+                logger.warning("Medusa-integration kunde inte initieras: %s", e)
+                self.medusa = None
 
         self.done_dir = Path(config["paths"]["done_dir"])
         self.error_dir = Path(config["paths"]["error_dir"])
@@ -450,6 +472,18 @@ class ShipmentOrchestrator:
         # 5c. Sök GARP-följesedel (för utskrift och/eller bifogande i mail)
         has_enot = any(n.opt_id == "enot" for n in shipment.notifications)
         sending_email = not self.skip_email and shipment.receiver and shipment.receiver.email and has_enot
+
+        # Webshop-order? Spegla shipment + tracking i Medusa så ordern blir
+        # "skickad" och tracking syns i Mitt konto. Connectorns egna SMTP-mail
+        # (rikare: DHL-ledtid + PDF-bilagor) skickas oavsett — Medusa mailar inte
+        # (no_notification + metadata.shipped_by). Best-effort, blockerar aldrig.
+        if self.medusa and self.medusa.is_webshop_order(shipment.order_no):
+            self.medusa.push_shipment(
+                order_no=shipment.order_no,
+                tracking_number=tracking,
+                carrier=carrier.value,
+            )
+
         waybill_data = self._find_waybill(shipment, xml_filepath) if xml_filepath else None
         if waybill_data:
             waybill_printed = self.printer.print_document(
