@@ -32,7 +32,7 @@ echo.
 
 REM Installera beroenden
 echo [2/5] Installerar Python-beroenden...
-pip install requests watchdog pyyaml pywin32 pystray Pillow openpyxl
+pip install -r requirements.txt pywin32
 if errorlevel 1 (
     echo VARNING: Nagra beroenden kunde inte installeras
 )

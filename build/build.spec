@@ -13,6 +13,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('../config/config.example.yaml', 'config'),
+        ('../assets', 'assets'),  # Ernst P-logga för etikett-stämpling m.m.
     ],
     packages=['openpyxl'],  # Inkludera openpyxl helt för Excel-export
     hiddenimports=[
@@ -41,6 +42,9 @@ a = Analysis(
         'openpyxl.styles',
         'openpyxl.utils',
         'openpyxl.worksheet',
+        'reportlab',
+        'reportlab.graphics.barcode.qr',
+        'pypdf',
     ],
     hookspath=[],
     hooksconfig={},

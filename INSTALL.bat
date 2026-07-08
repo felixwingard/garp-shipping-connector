@@ -30,7 +30,10 @@ if errorlevel 1 (
 if "%PYTHON%"=="py" (set PYTHONW=pyw) else (set PYTHONW=pythonw)
 
 echo  [1/4] Installerar Python-paket...
-%PYTHON% -m pip install requests watchdog pyyaml pywin32 pystray Pillow openpyxl >nul 2>&1
+REM Alla beroenden fran requirements.txt (reportlab, pypdf m.fl.) + pywin32
+%PYTHON% -m pip install -r requirements.txt >nul 2>&1
+if errorlevel 1 %PYTHON% -m pip install requests watchdog pyyaml pystray Pillow openpyxl reportlab pypdf >nul 2>&1
+%PYTHON% -m pip install pywin32 >nul 2>&1
 echo         Klart!
 echo.
 
