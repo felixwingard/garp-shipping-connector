@@ -301,6 +301,12 @@ class ShipmentOrchestrator:
             label_data = documents["label"]
             shipment_list = documents.get("shipment_list")
 
+            # 2b. Tack-rad + recensions-QR i etikettens tomma nederkant
+            # (endast DHL — Bring-etiketten har ingen fri yta). Styrs av
+            # label_stamp i config; vid fel returneras originalet orört.
+            from .printing.label_stamp import stamp_review_footer
+            label_data = stamp_review_footer(label_data, self.config)
+
             # Boka upphämtning om begärt
             booking = shipment.service.booking
             if booking and booking.pickup_booking:

@@ -75,6 +75,17 @@ printers:
   # SumatraPDF — sätt om auto-hitta misslyckas. Filen kan heta SumatraPDF.exe eller SumatraPDF-3.5.2-64.exe:
   # sumatra_exe: "C:\\GARP-Shipping\\garp-shipping-connector-main\\SumatraPDF-3.5.2-64.exe"
 
+# Tack-rad + recensions-QR på DHL-etiketten
+# Stämplas i den tomma remsan (~19 mm) längst ned på etiketten innan utskrift.
+# Endast DHL — Bring-etiketter har ingen fri yta. Vid fel skrivs originalet ut.
+label_stamp:
+  enabled: true
+  # review_url: ""        # Tom → smtp.google_review_url används (samma som i kundmailen)
+  logo: true              # Ernst P-emblemet (assets/ernstp_logo.png). false = ★★★★★ i stället
+  title: "Tack för din order!"
+  line1: "Nöjd med Ernst P AB? Skanna koden"
+  line2: "och lämna ett omdöme på Google."
+
 # SMTP (Loopia) — för kundmail med spårningslänk
 # Skapa adressen no-reply@ernstp.se i Loopia (eller använd befintlig).
 smtp:
